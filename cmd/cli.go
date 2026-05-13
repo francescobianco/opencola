@@ -144,6 +144,11 @@ func Run() error {
 			break
 		}
 
+		if strings.ToLower(line) == "quit" || strings.ToLower(line) == "exit" {
+			tui.printGoodbye()
+			break
+		}
+
 		if strings.HasPrefix(line, "/") {
 			if tui.handleCommand(line) {
 				tui.printGoodbye()

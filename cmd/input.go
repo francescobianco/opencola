@@ -22,6 +22,12 @@ var slashCommands = []string{
 	"/spin",
 }
 
+var plainCommands = []string{
+	"clear",
+	"quit",
+	"exit",
+}
+
 type InputReader struct {
 	history       []string
 	historyIndex  int
@@ -252,6 +258,14 @@ func (r *InputReader) insertRune(ch rune) {
 func (r *InputReader) autocomplete() {
 	input := string(r.buffer[:r.cursorPos])
 	if !strings.HasPrefix(input, "/") {
+		for _, cmd := range plainCommands {
+			if strings.HasPrefix(cmd, strings.ToLower(input)) {
+				r.buffer = []rune(cmd + " ")
+				r.cursorPos = len(r.buffer)
+				r.renderLine()
+				return
+			}
+		}
 		return
 	}
 
