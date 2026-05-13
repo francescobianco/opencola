@@ -99,8 +99,8 @@ assert_contains "Banner help hint" "Type /help for a list of commands." "$VISIBL
 
 STATUS_LINE=$(last_line_clean)
 assert_eq "Status bar initial format" \
-    " -  OpenCola v0.1.0  Provider: none  Model: none  Status: Disconnected" \
-    "$STATUS_LINE"
+    "... OpenCola v0.1.0  Provider: none  Model: none  Status: Disconnected" \
+	"$STATUS_LINE"
 
 echo ""
 
@@ -109,15 +109,15 @@ echo "[2] Spinner Animation"
 send "/spin" Enter
 wait_for 0.3
 
-# After 300ms (6 ticks) the frame should have changed from " - "
+# After 300ms (6 ticks) the frame should have changed from "..."
 STATUS_LINE_AFTER=$(last_line_clean)
 assert_contains "Spinner activated statusbar still has logo" \
     "OpenCola v0.1.0" "$STATUS_LINE_AFTER"
 
-# The frame should NOT be " - " anymore (it should have advanced)
+# The frame should NOT be "..." anymore (it should have advanced)
 echo -n "  TEST  Spinner frame advanced ... "
 case "$STATUS_LINE_AFTER" in
-    " - "*)
+    "... "*)
         echo "FAIL  (frame did not change)"
         FAIL=$((FAIL + 1))
         ;;
@@ -146,7 +146,7 @@ wait_for 0.2
 # After turning off, frame should be back to " - "
 STATUS_LINE_OFF=$(last_line_clean)
 assert_eq "Status bar after spinner off" \
-    " -  OpenCola v0.1.0  Provider: none  Model: none  Status: Disconnected" \
+    "... OpenCola v0.1.0  Provider: none  Model: none  Status: Disconnected" \
     "$STATUS_LINE_OFF"
 
 echo ""
@@ -166,7 +166,7 @@ wait_for 0.3
 
 STATUS_LINE=$(last_line_clean)
 assert_eq "Status bar after clear" \
-    " -  OpenCola v0.1.0  Provider: none  Model: none  Status: Disconnected" \
+    "... OpenCola v0.1.0  Provider: none  Model: none  Status: Disconnected" \
     "$STATUS_LINE"
 
 echo ""

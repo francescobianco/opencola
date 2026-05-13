@@ -44,10 +44,11 @@ The status bar is always visible on the last terminal row.
 
 **Spinner:**
 - 3 characters wide, positioned at the far left of the status bar
-- 8-frame animation sequence: ` - `, ` : `, ` = `, `-=-`, `=|="`, `-=-`, ` = `, ` : `
-- 50ms interval between frames (full cycle in 400ms)
+- Continuous flow animation using character right-rotation: `...`, `|..`, `||.`, `.||`, `..|`
+- 50ms interval between frames (full cycle in 250ms)
 - Toggled by the hidden `/spin` command (not documented in `/help`)
-- Resets to frame 0 on each toggle
+- Resets to initial state on each toggle
+- When active, the prompt line is cleared (user input is not displayed) to signal busy state
 
 ## Banner
 

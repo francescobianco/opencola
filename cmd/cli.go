@@ -22,7 +22,8 @@ const author = "by Francesco Bianco <bianco@javanile.org>"
 
 var providers = []string{"opencode", "opencode-go", "opencode-zen"}
 
-var spinnerFrames = []string{" - ", " : ", " = ", "-=-", "=|=", "-=-", " = ", " : "}
+var spinnerBuffer = []byte("...||")
+var spinnerBufferInit = []byte("...||")
 
 type TUI struct {
 	ag          *agent.Agent
@@ -33,7 +34,6 @@ type TUI struct {
 	ctx         context.Context
 	input       *InputReader
 	spinning    bool
-	spinnerIdx  int
 	spinnerMu   sync.Mutex
 	spinnerDone chan struct{}
 }
@@ -169,14 +169,19 @@ func (t *TUI) renderInitialLayout() {
 
 func (t *TUI) renderPrompt() {
 	height := getTerminalHeight()
-	fmt.Printf("\033[%d;1H", height-2)
-	fmt.Print("\033[2K")
-	fmt.Print("> ")
+	t.spinnerMu.Lock()
+	spinning := t.spinning
+	t.spinnerMu.Unlock()
+	if spinning {
+		fmt.Printf("\033[%d;1H\033[2K", height-2)
+		return
+	}
+	fmt.Printf("\033[%d;1H\033[2K> ", height-2)
 }
 
 func (t *TUI) renderStatusBar() {
 	t.spinnerMu.Lock()
-	frame := spinnerFrames[t.spinnerIdx]
+	frame := string(spinnerBuffer[:3])
 	t.spinnerMu.Unlock()
 
 	status := "Disconnected"
@@ -329,7 +334,9 @@ func (t *TUI) startSpinner() {
 			case <-ticker.C:
 				t.spinnerMu.Lock()
 				if t.spinning {
-					t.spinnerIdx = (t.spinnerIdx + 1) % len(spinnerFrames)
+					last := spinnerBuffer[len(spinnerBuffer)-1]
+					copy(spinnerBuffer[1:], spinnerBuffer[:len(spinnerBuffer)-1])
+					spinnerBuffer[0] = last
 				}
 				t.spinnerMu.Unlock()
 				if t.spinning {
@@ -353,7 +360,9 @@ func (t *TUI) toggleSpinner() {
 	defer t.spinnerMu.Unlock()
 
 	t.spinning = !t.spinning
-	t.spinnerIdx = 0
+	spinnerBuffer = make([]byte, len(spinnerBufferInit))
+	copy(spinnerBuffer, spinnerBufferInit)
+	t.input.Spinning = t.spinning
 }
 
 func (t *TUI) printGoodbye() {
