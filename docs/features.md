@@ -7,18 +7,33 @@ This document describes the core design principles and features of OpenCola. Eac
 **Rationale:** A clean, predictable terminal interface reduces cognitive load and makes the tool feel professional. The layout follows a minimal design inspired by modern CLI tools.
 
 **Behavior:**
-- On startup, the terminal is cleared and a minimal banner is displayed:
+- On startup, the terminal is cleared before rendering
+- Free space is left above the banner (roughly one-third of terminal height)
+- Banner displays:
   ```
   OpenCola - minimal coding agent
   by Francesco Bianco <bianco@javanile.org>
 
   >
   ```
-- The status bar occupies the last line at all times (dark blue background, white text)
+- One blank line below the prompt before user input
+- The status bar occupies the last line at all times
 - On exit, the terminal is cleared and a goodbye message is shown:
   ```
   Goodbye! Thanks for using OpenCola. See you next time!
   ```
+
+## Status Bar
+
+**Rationale:** Users should always know the current state of the application without typing a command. A persistent status bar on the last terminal line provides at-a-glance context.
+
+**Behavior:**
+- Occupies the last line of the terminal at all times
+- The logo portion (`OpenCola v0.1.0`) uses **inverted colors**: white background with dark blue text
+- The rest of the bar uses dark blue background (`rgb(30,64,120)`) with white text
+- Format: `[OpenCola v0.1.0] Provider: [name] Model: [model] Status: [Connected/Disconnected]`
+- Automatically redraws after each command output
+- The prompt `> ` is rendered on the line above the status bar
 
 ## Command History & Navigation
 
@@ -84,16 +99,6 @@ This document describes the core design principles and features of OpenCola. Eac
 - The agent starts without requiring any preconfigured environment variables
 - When no provider is connected, the user is guided to use `/connect`
 - After connecting, `/models` lists available models
-
-## Status Bar
-
-**Rationale:** Users should always know the current state of the application without typing a command.
-
-**Behavior:**
-- Occupies the last line of the terminal at all times
-- Dark blue background (`rgb(30,64,120)`) with white text
-- Format: `OpenCola v0.1.0 | Provider: [name] | Model: [model] | Status: [Connected/Disconnected]`
-- Automatically redraws after each command output
 
 ## Extensible Provider Architecture
 

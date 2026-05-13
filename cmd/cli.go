@@ -15,10 +15,9 @@ import (
 const version = "0.1.0"
 const author = "by Francesco Bianco <bianco@javanile.org>"
 
-const banner = `OpenCola - minimal coding agent
-`
-
 func Run() error {
+	fmt.Print("\033[2J\033[H")
+
 	cfgPath := config.DefaultConfigPath()
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
@@ -52,9 +51,7 @@ func Run() error {
 		ag.SetProvider(prov)
 	}
 
-	fmt.Print(banner)
-	fmt.Println(author)
-	fmt.Println()
+	printBanner()
 
 	input := NewInputReader()
 	input.LoadHistory(config.DefaultHistoryPath())
@@ -66,7 +63,6 @@ func Run() error {
 		drawStatusBar(ag)
 		line, err := input.ReadLine()
 		if err != nil {
-			fmt.Println()
 			printGoodbye()
 			break
 		}
@@ -77,12 +73,9 @@ func Run() error {
 		}
 
 		if input.IsVimQuit(line) {
-			fmt.Println()
 			printGoodbye()
 			break
 		}
-
-		fmt.Println()
 
 		if strings.HasPrefix(line, "/") {
 			if handleCommand(line, ag, cfg, cfgPath, envCfg, envPath, ctx) {
@@ -95,9 +88,7 @@ func Run() error {
 
 		if strings.ToLower(line) == "clear" {
 			fmt.Print("\033[2J\033[H")
-			fmt.Print(banner)
-			fmt.Println(author)
-			fmt.Println()
+			printBanner()
 			drawStatusBar(ag)
 			continue
 		}
@@ -115,6 +106,17 @@ func Run() error {
 	}
 
 	return nil
+}
+
+func printBanner() {
+	height := getTerminalHeight()
+	for i := 0; i < height/3; i++ {
+		fmt.Println()
+	}
+	fmt.Println("OpenCola - minimal coding agent")
+	fmt.Println(author)
+	fmt.Println()
+	fmt.Print("> ")
 }
 
 func handleCommand(input string, ag *agent.Agent, cfg *config.Config, cfgPath string, envCfg *config.EnvConfig, envPath string, ctx context.Context) bool {
@@ -197,15 +199,12 @@ func handleCommand(input string, ag *agent.Agent, cfg *config.Config, cfgPath st
 
 	case "/clear":
 		fmt.Print("\033[2J\033[H")
-		fmt.Print(banner)
-		fmt.Println(author)
-		fmt.Println()
+		printBanner()
 
 	case "/status":
 		drawStatusBar(ag)
 
 	case "/exit", "/quit":
-		printGoodbye()
 		return true
 
 	default:
@@ -229,9 +228,10 @@ func drawStatusBar(ag *agent.Agent) {
 	width := getTerminalWidth()
 	height := getTerminalHeight()
 
-	bar := fmt.Sprintf(" OpenCola v%s  |  Provider: %s  |  Model: %s  |  Status: %s ",
-		version, provName, modelName, status)
+	logo := fmt.Sprintf(" OpenCola v%s ", version)
+	rest := fmt.Sprintf(" Provider: %s  Model: %s  Status: %s ", provName, modelName, status)
 
+	bar := logo + rest
 	if len(bar) > width {
 		bar = bar[:width]
 	}
@@ -239,14 +239,21 @@ func drawStatusBar(ag *agent.Agent) {
 	padding := strings.Repeat(" ", width-len(bar))
 	bar += padding
 
+	logoLen := len(logo)
+	restPart := bar[logoLen:]
+
 	fmt.Printf("\033[%d;1H", height)
 	fmt.Printf("\033[2K")
-	fmt.Printf("\033[48;2;30;64;120m\033[38;2;255;255;255m%s\033[0m", bar)
+	fmt.Printf("\033[48;2;255;255;255m\033[38;2;30;64;120m%s\033[0m", logo)
+	fmt.Printf("\033[48;2;30;64;120m\033[38;2;255;255;255m%s\033[0m", restPart)
 	fmt.Printf("\033[%d;1H", height-1)
 	fmt.Printf("\033[2K")
+	fmt.Print("> ")
 }
 
 func printGoodbye() {
+	fmt.Print("\033[2J\033[H")
 	fmt.Println()
 	fmt.Println("Goodbye! Thanks for using OpenCola. See you next time!")
+	fmt.Println()
 }
