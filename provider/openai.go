@@ -10,12 +10,14 @@ import (
 )
 
 type OpenAIProvider struct {
-	client *openai.Client
-	model  string
-	name   string
+	client         *openai.Client
+	model          string
+	name           string
+	fallbackModels []ModelInfo
+	allowedModels  map[string]struct{}
 }
 
-func NewOpenAI(name, apiKey, model, baseURL string) *OpenAIProvider {
+func NewOpenAI(name, apiKey, model, baseURL string, fallbackModels ...[]ModelInfo) *OpenAIProvider {
 	if apiKey == "" {
 		apiKey = os.Getenv("OPENAI_API_KEY")
 	}
@@ -26,15 +28,26 @@ func NewOpenAI(name, apiKey, model, baseURL string) *OpenAIProvider {
 		name = "openai"
 	}
 
+	var models []ModelInfo
+	if len(fallbackModels) > 0 {
+		models = fallbackModels[0]
+	}
+	allowed := make(map[string]struct{}, len(models))
+	for _, m := range models {
+		allowed[m.ID] = struct{}{}
+	}
+
 	cfg := openai.DefaultConfig(apiKey)
 	if baseURL != "" {
 		cfg.BaseURL = baseURL
 	}
 
 	return &OpenAIProvider{
-		client: openai.NewClientWithConfig(cfg),
-		model:  model,
-		name:   name,
+		client:         openai.NewClientWithConfig(cfg),
+		model:          model,
+		name:           name,
+		fallbackModels: models,
+		allowedModels:  allowed,
 	}
 }
 
@@ -106,15 +119,26 @@ func (p *OpenAIProvider) Chat(ctx context.Context, messages []Message, tools []T
 func (p *OpenAIProvider) ListModels(ctx context.Context) ([]ModelInfo, error) {
 	models, err := p.client.ListModels(ctx)
 	if err != nil {
+		if len(p.fallbackModels) > 0 {
+			return p.fallbackModels, nil
+		}
 		return nil, fmt.Errorf("list models: %w", err)
 	}
 
 	var result []ModelInfo
 	for _, m := range models.Models {
+		if len(p.allowedModels) > 0 {
+			if _, ok := p.allowedModels[m.ID]; !ok {
+				continue
+			}
+		}
 		result = append(result, ModelInfo{
 			ID:   m.ID,
 			Name: m.ID,
 		})
+	}
+	if len(result) == 0 && len(p.fallbackModels) > 0 {
+		return p.fallbackModels, nil
 	}
 	return result, nil
 }

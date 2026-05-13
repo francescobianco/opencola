@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -20,11 +19,42 @@ import (
 const version = "0.1.0"
 const author = "by Francesco Bianco <bianco@javanile.org>"
 
-var providers = []string{"opencode", "opencode-go", "opencode-zen"}
+type providerProfile struct {
+	Slug         string
+	Label        string
+	BaseURL      string
+	DefaultModel string
+	Models       []provider.ModelInfo
+}
+
+var providerProfiles = []providerProfile{
+	{
+		Slug:         "opencode",
+		Label:        "OpenCode",
+		BaseURL:      "https://opencode.ai/zen/v1",
+		DefaultModel: "qwen3.6-plus",
+		Models:       openCodeZenChatModels(),
+	},
+	{
+		Slug:         "opencode-go",
+		Label:        "OpenCode Go",
+		BaseURL:      "https://opencode.ai/zen/go/v1",
+		DefaultModel: "kimi-k2.6",
+		Models:       openCodeGoChatModels(),
+	},
+	{
+		Slug:         "opencode-zen",
+		Label:        "OpenCode Zen",
+		BaseURL:      "https://opencode.ai/zen/v1",
+		DefaultModel: "qwen3.6-plus",
+		Models:       openCodeZenChatModels(),
+	},
+}
 
 const spinnerSeed = "...|...||....|.|...||......"
 
 var spinnerBuffer = []byte(spinnerSeed)
+var terminalMu sync.Mutex
 
 type TUI struct {
 	ag          *agent.Agent
@@ -52,12 +82,13 @@ func Run() error {
 	envCfg := config.LoadEnv(envPath)
 
 	if envCfg.APIKey != "" && cfg.ActiveProvider() == nil {
+		profile := mustProviderProfile("opencode")
 		cfg.AddProvider(config.ProviderConfig{
-			Name:     "opencode",
-			Provider: "opencode",
+			Name:     profile.Label,
+			Provider: profile.Slug,
 			APIKey:   envCfg.APIKey,
-			BaseURL:  envCfg.BaseURL,
-			Model:    envCfg.Model,
+			BaseURL:  profile.BaseURL,
+			Model:    firstNonEmpty(envCfg.Model, profile.DefaultModel),
 		})
 		cfg.Save(cfgPath)
 	}
@@ -71,7 +102,7 @@ func Run() error {
 	ag := agent.New(nil, toolList)
 
 	if p := cfg.ActiveProvider(); p != nil && p.APIKey != "" {
-		prov := newProvider(p.Provider, p.APIKey, p.Model, p.BaseURL)
+		prov := newProvider(p.Provider, p.APIKey, p.Model, normalizeProviderBaseURL(p.Provider, p.BaseURL))
 		ag.SetProvider(prov)
 	}
 
@@ -90,7 +121,7 @@ func Run() error {
 	tui.input.LoadHistory(config.DefaultHistoryPath())
 	defer tui.input.SaveHistory(config.DefaultHistoryPath())
 
-	tui.renderInitialLayout()
+	tui.renderInitialLayout(true)
 	tui.startSpinner()
 	defer tui.stopSpinner()
 
@@ -101,6 +132,7 @@ func Run() error {
 			tui.printGoodbye()
 			break
 		}
+		tui.input.SetPromptRow(tui.contentBottomRow())
 
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -122,7 +154,7 @@ func Run() error {
 		}
 
 		if strings.ToLower(line) == "clear" {
-			tui.renderInitialLayout()
+			tui.renderInitialLayout(false)
 			continue
 		}
 
@@ -144,36 +176,47 @@ func Run() error {
 	return nil
 }
 
-func (t *TUI) renderInitialLayout() {
+func (t *TUI) renderInitialLayout(showBanner bool) {
 	height := getTerminalHeight()
 
 	fmt.Print("\033[2J\033[H")
 	t.reserveStatusLine()
 
-	freeLines := height - 6
-	if freeLines < 0 {
-		freeLines = 0
-	}
+	if showBanner {
+		freeLines := height - 7
+		if freeLines < 0 {
+			freeLines = 0
+		}
 
-	for i := 0; i < freeLines; i++ {
+		for i := 0; i < freeLines; i++ {
+			fmt.Println()
+		}
+
+		fmt.Printf("\033[1;97mOpenCola\033[0m - minimal coding agent\n")
+		fmt.Println(author)
+		fmt.Println("Type /help for a list of commands.")
 		fmt.Println()
 	}
 
-	fmt.Printf("\033[1mOpenCola\033[0m - minimal coding agent\n")
-	fmt.Println(author)
-	fmt.Println("Type /help for a list of commands.")
-	fmt.Println()
-
-	fmt.Printf("\033[%d;1H", t.contentBottomRow())
+	t.input.SetPromptRow(t.initialPromptRow())
+	fmt.Printf("\033[%d;1H", t.initialPromptRow())
 	fmt.Print("\033[2K")
 	fmt.Print("> ")
+	fmt.Printf("\033[%d;1H\033[2K", t.contentBottomRow())
 
 	t.renderStatusBar()
 }
 
 func (t *TUI) renderPrompt() {
+	row := t.input.promptRow
+	if row <= 0 {
+		row = t.contentBottomRow()
+		t.input.SetPromptRow(row)
+	}
+	terminalMu.Lock()
+	defer terminalMu.Unlock()
 	t.reserveStatusLine()
-	fmt.Printf("\033[%d;1H\033[2K> ", t.contentBottomRow())
+	fmt.Printf("\033[%d;1H\033[2K> ", row)
 }
 
 func (t *TUI) contentBottomRow() int {
@@ -182,6 +225,14 @@ func (t *TUI) contentBottomRow() int {
 		return 1
 	}
 	return height - 1
+}
+
+func (t *TUI) initialPromptRow() int {
+	row := getTerminalHeight() - 2
+	if row < 1 {
+		return 1
+	}
+	return row
 }
 
 func (t *TUI) reserveStatusLine() {
@@ -193,7 +244,11 @@ func (t *TUI) reserveStatusLine() {
 
 func (t *TUI) renderStatusBar() {
 	t.spinnerMu.Lock()
-	frame := string(spinnerBuffer[:3])
+	spinning := t.spinning
+	frame := ""
+	if spinning {
+		frame = string(spinnerBuffer[:3])
+	}
 	t.spinnerMu.Unlock()
 
 	status := "Disconnected"
@@ -211,8 +266,11 @@ func (t *TUI) renderStatusBar() {
 
 	logo := fmt.Sprintf(" OpenCola v%s ", version)
 	rest := fmt.Sprintf(" Provider: %s  Model: %s  Status: %s ", provName, modelName, status)
+	if spinning {
+		rest += frame
+	}
 
-	bar := frame + logo + rest
+	bar := logo + rest
 	if len(bar) > width {
 		bar = bar[:width]
 	}
@@ -220,24 +278,33 @@ func (t *TUI) renderStatusBar() {
 	padding := strings.Repeat(" ", width-len(bar))
 	bar += padding
 
-	frameLen := len(frame)
 	logoLen := len(logo)
+	if logoLen > len(bar) {
+		logoLen = len(bar)
+	}
 
-	fmt.Print("\0337")
+	terminalMu.Lock()
+	defer terminalMu.Unlock()
+
+	fmt.Print("\033[?25l")
+	fmt.Print("\033[s")
+	fmt.Print("\033[r")
 	fmt.Printf("\033[%d;1H", height)
 	fmt.Print("\033[2K")
 
-	fmt.Printf("\033[48;2;30;64;120m\033[38;2;255;200;50m%s\033[0m", bar[:frameLen])
-
-	fmt.Printf("\033[48;2;255;255;255m\033[38;2;30;64;120m%s\033[0m", bar[frameLen:frameLen+logoLen])
-	fmt.Printf("\033[48;2;30;64;120m\033[38;2;255;255;255m%s\033[0m", bar[frameLen+logoLen:])
-	fmt.Print("\0338")
+	fmt.Printf("\033[1;97m\033[48;2;0;70;180m%s\033[0m", bar[:logoLen])
+	fmt.Printf("\033[48;2;45;55;65m\033[38;2;190;200;210m%s\033[0m", bar[logoLen:])
+	t.reserveStatusLine()
+	fmt.Print("\033[u")
+	fmt.Print("\033[?25h")
 }
 
 func (t *TUI) renderEventLog(message string) {
 	ts := time.Now().Format("15:04:05")
+	terminalMu.Lock()
 	fmt.Printf("\033[%d;1H\033[2K", t.contentBottomRow())
 	fmt.Printf("[%s] %s\r\n", ts, message)
+	terminalMu.Unlock()
 	t.renderStatusBar()
 }
 
@@ -259,40 +326,40 @@ func (t *TUI) handleCommand(input string) bool {
 	case "/connect":
 		if len(parts) < 2 {
 			fmt.Println("Usage: /connect <provider>")
-			fmt.Printf("  providers: %s\n", strings.Join(providers, ", "))
+			fmt.Printf("  providers: %s\n", strings.Join(providerLabels(), ", "))
 			return false
 		}
 
 		provType := parts[1]
-		if !slices.Contains(providers, provType) {
+		profile, ok := findProviderProfile(provType)
+		if !ok {
 			fmt.Printf("Unknown provider: %s\n", provType)
-			fmt.Printf("Available: %s\n", strings.Join(providers, ", "))
+			fmt.Printf("Available: %s\n", strings.Join(providerLabels(), ", "))
 			return false
 		}
 
-		fmt.Printf("Please enter your API key for %s: ", provType)
-
-		fd := int(os.Stdin.Fd())
-		state, _ := term.MakeRaw(fd)
-		apiKey, _ := bufio.NewReader(os.Stdin).ReadString('\n')
-		term.Restore(fd, state)
+		apiKey, err := readAPIKey(profile.Label)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading API key: %v\n", err)
+			return false
+		}
 		apiKey = strings.TrimSpace(apiKey)
-		fmt.Println()
 
 		if apiKey == "" {
 			fmt.Println("API key is required")
 			return false
 		}
 
-		baseURL := getProviderBaseURL(provType)
-		prov := newProvider(provType, apiKey, "", baseURL)
+		baseURL := profile.BaseURL
+		prov := newProvider(profile.Slug, apiKey, profile.DefaultModel, baseURL)
 
 		t.ag.SetProvider(prov)
 		t.cfg.AddProvider(config.ProviderConfig{
 			Name:     prov.Name(),
-			Provider: provType,
+			Provider: profile.Slug,
 			APIKey:   apiKey,
 			BaseURL:  baseURL,
+			Model:    profile.DefaultModel,
 		})
 		t.cfg.Save(t.cfgPath)
 
@@ -300,7 +367,7 @@ func (t *TUI) handleCommand(input string) bool {
 		t.envCfg.BaseURL = baseURL
 		t.envCfg.Save(t.envPath)
 
-		fmt.Printf("Connected to %s\n", prov.Name())
+		fmt.Printf("Connected to %s\n", profile.Label)
 
 	case "/models":
 		if !t.ag.IsConnected() {
@@ -325,7 +392,7 @@ func (t *TUI) handleCommand(input string) bool {
 		fmt.Println("Session reset")
 
 	case "/clear":
-		t.renderInitialLayout()
+		t.renderInitialLayout(false)
 
 	case "/status":
 		t.renderStatusBar()
@@ -341,6 +408,52 @@ func (t *TUI) handleCommand(input string) bool {
 	}
 
 	return false
+}
+
+func readAPIKey(providerName string) (string, error) {
+	terminalMu.Lock()
+	defer terminalMu.Unlock()
+
+	fmt.Printf("Please enter your API key for %s: ", providerName)
+
+	fd := int(os.Stdin.Fd())
+	state, err := term.MakeRaw(fd)
+	if err != nil {
+		fmt.Println()
+		return "", err
+	}
+	defer term.Restore(fd, state)
+
+	var input strings.Builder
+	reader := bufio.NewReader(os.Stdin)
+
+	for {
+		ch, _, err := reader.ReadRune()
+		if err != nil {
+			fmt.Println()
+			return input.String(), err
+		}
+
+		switch ch {
+		case '\r', '\n':
+			fmt.Print("\r\n")
+			return input.String(), nil
+		case 3:
+			fmt.Print("\r\n")
+			return "", fmt.Errorf("interrupt")
+		case 127, '\b':
+			if input.Len() > 0 {
+				value := []rune(input.String())
+				value = value[:len(value)-1]
+				input.Reset()
+				input.WriteString(string(value))
+			}
+		default:
+			if ch >= 32 {
+				input.WriteRune(ch)
+			}
+		}
+	}
 }
 
 func (t *TUI) startSpinner() {
@@ -359,8 +472,9 @@ func (t *TUI) startSpinner() {
 					copy(spinnerBuffer[:len(spinnerBuffer)-1], spinnerBuffer[1:])
 					spinnerBuffer[len(spinnerBuffer)-1] = first
 				}
+				spinning := t.spinning
 				t.spinnerMu.Unlock()
-				if t.spinning {
+				if spinning {
 					t.renderStatusBar()
 				}
 			}
@@ -424,7 +538,15 @@ func showModelMenu(models []provider.ModelInfo) string {
 			if idx == selected {
 				cursor = "> "
 			}
-			fmt.Printf("%s %s\n", cursor, models[idx].ID)
+			name := models[idx].Name
+			if name == "" {
+				name = models[idx].ID
+			}
+			if name == models[idx].ID {
+				fmt.Printf("%s %s\n", cursor, models[idx].ID)
+			} else {
+				fmt.Printf("%s %s (%s)\n", cursor, name, models[idx].ID)
+			}
 		}
 	}
 
@@ -468,17 +590,96 @@ func showModelMenu(models []provider.ModelInfo) string {
 	}
 }
 
-func newProvider(name, apiKey, model, baseURL string) provider.Provider {
-	return provider.NewOpenAI(name, apiKey, model, baseURL)
+func newProvider(slug, apiKey, model, baseURL string) provider.Provider {
+	profile, ok := findProviderProfile(slug)
+	if !ok {
+		return provider.NewOpenAI(slug, apiKey, model, baseURL)
+	}
+	if model == "" {
+		model = profile.DefaultModel
+	}
+	return provider.NewOpenAI(profile.Label, apiKey, model, normalizeProviderBaseURL(slug, baseURL), profile.Models)
 }
 
-func getProviderBaseURL(name string) string {
-	switch name {
-	case "opencode-go":
-		return "https://go.opencode.ai/v1"
-	case "opencode-zen":
-		return "https://zen.opencode.ai/v1"
-	default:
-		return "https://api.openai.com/v1"
+func normalizeProviderBaseURL(slug string, baseURL string) string {
+	profile, ok := findProviderProfile(slug)
+	if !ok {
+		return firstNonEmpty(baseURL, "https://api.openai.com/v1")
+	}
+	return profile.BaseURL
+}
+
+func findProviderProfile(slug string) (providerProfile, bool) {
+	for _, profile := range providerProfiles {
+		if profile.Slug == slug {
+			return profile, true
+		}
+	}
+	return providerProfile{}, false
+}
+
+func mustProviderProfile(slug string) providerProfile {
+	profile, ok := findProviderProfile(slug)
+	if !ok {
+		panic("unknown provider profile: " + slug)
+	}
+	return profile
+}
+
+func providerSlugs() []string {
+	slugs := make([]string, 0, len(providerProfiles))
+	for _, profile := range providerProfiles {
+		slugs = append(slugs, profile.Slug)
+	}
+	return slugs
+}
+
+func providerLabels() []string {
+	labels := make([]string, 0, len(providerProfiles))
+	for _, profile := range providerProfiles {
+		labels = append(labels, fmt.Sprintf("%s (%s)", profile.Label, profile.Slug))
+	}
+	return labels
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func openCodeZenChatModels() []provider.ModelInfo {
+	return []provider.ModelInfo{
+		{ID: "qwen3.6-plus", Name: "Qwen3.6 Plus"},
+		{ID: "qwen3.5-plus", Name: "Qwen3.5 Plus"},
+		{ID: "minimax-m2.7", Name: "MiniMax M2.7"},
+		{ID: "minimax-m2.5", Name: "MiniMax M2.5"},
+		{ID: "minimax-m2.5-free", Name: "MiniMax M2.5 Free"},
+		{ID: "glm-5.1", Name: "GLM 5.1"},
+		{ID: "glm-5", Name: "GLM 5"},
+		{ID: "kimi-k2.5", Name: "Kimi K2.5"},
+		{ID: "kimi-k2.6", Name: "Kimi K2.6"},
+		{ID: "big-pickle", Name: "Big Pickle"},
+		{ID: "deepseek-v4-flash-free", Name: "DeepSeek V4 Flash Free"},
+		{ID: "ring-2.6-1t-free", Name: "Ring 2.6 1T Free"},
+		{ID: "nemotron-3-super-free", Name: "Nemotron 3 Super Free"},
+	}
+}
+
+func openCodeGoChatModels() []provider.ModelInfo {
+	return []provider.ModelInfo{
+		{ID: "glm-5.1", Name: "GLM 5.1"},
+		{ID: "glm-5", Name: "GLM 5"},
+		{ID: "kimi-k2.5", Name: "Kimi K2.5"},
+		{ID: "kimi-k2.6", Name: "Kimi K2.6"},
+		{ID: "deepseek-v4-pro", Name: "DeepSeek V4 Pro"},
+		{ID: "deepseek-v4-flash", Name: "DeepSeek V4 Flash"},
+		{ID: "mimo-v2.5", Name: "MiMo-V2.5"},
+		{ID: "mimo-v2.5-pro", Name: "MiMo-V2.5-Pro"},
+		{ID: "qwen3.6-plus", Name: "Qwen3.6 Plus"},
+		{ID: "qwen3.5-plus", Name: "Qwen3.5 Plus"},
 	}
 }

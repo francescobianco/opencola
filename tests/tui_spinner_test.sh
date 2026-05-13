@@ -7,12 +7,14 @@ BINARY="${ROOT}/opencola"
 REFERENCE="${ROOT}/tests/fixtures/reference"
 
 TMUX_SESSION="opencola-test-$$"
+TEST_HOME="$(mktemp -d)"
 
 PASS=0
 FAIL=0
 
 cleanup() {
     tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+    rm -rf "$TEST_HOME"
 }
 trap cleanup EXIT
 trap cleanup INT
@@ -59,6 +61,22 @@ assert_contains() {
     fi
 }
 
+assert_not_contains() {
+    local name="$1"
+    local needle="$2"
+    local haystack="$3"
+
+    echo -n "  TEST  $name ... "
+    if echo "$haystack" | grep -Fq "$needle"; then
+        echo "FAIL"
+        echo "    Expected not to contain: '$needle'"
+        FAIL=$((FAIL + 1))
+    else
+        echo "PASS"
+        PASS=$((PASS + 1))
+    fi
+}
+
 assert_eq() {
     local name="$1"
     local expected="$2"
@@ -87,7 +105,7 @@ cd "$ROOT"
 # ============================================================================
 echo "[1] Initial Layout"
 start_tmux
-send "${BINARY}" Enter
+send "env HOME=${TEST_HOME} ${BINARY}" Enter
 wait_for 1
 
 VISIBLE=$(full_text)
@@ -99,8 +117,13 @@ assert_contains "Banner help hint" "Type /help for a list of commands." "$VISIBL
 
 STATUS_LINE=$(last_line_clean)
 assert_eq "Status bar initial format" \
-    "... OpenCola v0.1.0  Provider: none  Model: none  Status: Disconnected" \
+    " OpenCola v0.1.0  Provider: none  Model: none  Status: Disconnected" \
 	"$STATUS_LINE"
+
+PROMPT_LINE=$(capture_visible | tail -3 | head -1 | sed 's/[[:space:]]*$//')
+BLANK_LINE=$(capture_visible | tail -2 | head -1 | sed 's/[[:space:]]*$//')
+assert_eq "Initial prompt has blank line before status bar" ">" "$PROMPT_LINE"
+assert_eq "Initial spacer line before status bar is empty" "" "$BLANK_LINE"
 
 echo ""
 
@@ -114,16 +137,16 @@ STATUS_LINE_AFTER=$(last_line_clean)
 assert_contains "Spinner activated statusbar still has logo" \
     "OpenCola v0.1.0" "$STATUS_LINE_AFTER"
 
-# The frame should NOT be "..." anymore (it should have advanced)
+# The frame should be visible only after the Status value and should advance.
 echo -n "  TEST  Spinner frame advanced ... "
 case "$STATUS_LINE_AFTER" in
-    "... "*)
-        echo "FAIL  (frame did not change)"
-        FAIL=$((FAIL + 1))
+    *"Status: Disconnected "*)
+        echo "PASS  (line: '$STATUS_LINE_AFTER')"
+        PASS=$((PASS + 1))
         ;;
     *)
-        echo "PASS  (frame: '${STATUS_LINE_AFTER:0:3}')"
-        PASS=$((PASS + 1))
+        echo "FAIL  (spinner suffix not visible)"
+        FAIL=$((FAIL + 1))
         ;;
 esac
 
@@ -133,10 +156,10 @@ sleep 0.3
 STATUS_LINE_LATER=$(last_line_clean)
 echo -n "  TEST  Spinner frame keeps advancing ... "
 if [ "$STATUS_LINE_AFTER" != "$STATUS_LINE_LATER" ]; then
-    echo "PASS  (changed: '${STATUS_LINE_AFTER:0:3}' -> '${STATUS_LINE_LATER:0:3}')"
+    echo "PASS  (changed: '${STATUS_LINE_AFTER##* }' -> '${STATUS_LINE_LATER##* }')"
     PASS=$((PASS + 1))
 else
-    echo "FAIL  (same frame: '${STATUS_LINE_AFTER:0:3}')"
+    echo "FAIL  (same frame: '${STATUS_LINE_AFTER##* }')"
     FAIL=$((FAIL + 1))
 fi
 
@@ -146,7 +169,7 @@ wait_for 0.2
 # After turning off, frame should be back to " - "
 STATUS_LINE_OFF=$(last_line_clean)
 assert_eq "Status bar after spinner off" \
-    "... OpenCola v0.1.0  Provider: none  Model: none  Status: Disconnected" \
+    " OpenCola v0.1.0  Provider: none  Model: none  Status: Disconnected" \
     "$STATUS_LINE_OFF"
 
 echo ""
@@ -164,9 +187,18 @@ assert_contains "/help shows /models" "/models" "$VISIBLE"
 send "clear" Enter
 wait_for 0.3
 
+VISIBLE=$(full_text)
+assert_not_contains "Clear hides startup banner" "OpenCola - minimal coding agent" "$VISIBLE"
+assert_not_contains "Clear hides credits" "by Francesco Bianco" "$VISIBLE"
+
+PROMPT_LINE=$(capture_visible | tail -3 | head -1 | sed 's/[[:space:]]*$//')
+BLANK_LINE=$(capture_visible | tail -2 | head -1 | sed 's/[[:space:]]*$//')
+assert_eq "Clear prompt has blank line before status bar" ">" "$PROMPT_LINE"
+assert_eq "Clear spacer line before status bar is empty" "" "$BLANK_LINE"
+
 STATUS_LINE=$(last_line_clean)
 assert_eq "Status bar after clear" \
-    "... OpenCola v0.1.0  Provider: none  Model: none  Status: Disconnected" \
+    " OpenCola v0.1.0  Provider: none  Model: none  Status: Disconnected" \
     "$STATUS_LINE"
 
 echo ""

@@ -27,6 +27,8 @@ type InputReader struct {
 	historyIndex  int
 	buffer        []rune
 	cursorPos     int
+	promptRow     int
+	renderedRows  int
 	originalState *term.State
 }
 
@@ -36,7 +38,13 @@ func NewInputReader() *InputReader {
 		historyIndex: -1,
 		buffer:       make([]rune, 0),
 		cursorPos:    0,
+		promptRow:    0,
+		renderedRows: 1,
 	}
+}
+
+func (r *InputReader) SetPromptRow(row int) {
+	r.promptRow = row
 }
 
 func (r *InputReader) LoadHistory(path string) {
@@ -183,19 +191,39 @@ func (r *InputReader) ReadLine() (string, error) {
 						r.buffer = append(r.buffer[:r.cursorPos], r.buffer[r.cursorPos+1:]...)
 						r.renderLine()
 					}
+
+				case '1':
+					seq := []rune{b3}
+					for {
+						next, _, err := reader.ReadRune()
+						if err != nil {
+							break
+						}
+						seq = append(seq, next)
+						if (next >= '@' && next <= '~') || len(seq) > 12 {
+							break
+						}
+					}
+					if string(seq) == "13;2u" || string(seq) == "13;2~" {
+						r.insertRune('\n')
+					}
 				}
 			}
 
 		default:
 			if b >= 32 {
-				r.buffer = append(r.buffer, 0)
-				copy(r.buffer[r.cursorPos+1:], r.buffer[r.cursorPos:])
-				r.buffer[r.cursorPos] = b
-				r.cursorPos++
-				r.renderLine()
+				r.insertRune(b)
 			}
 		}
 	}
+}
+
+func (r *InputReader) insertRune(ch rune) {
+	r.buffer = append(r.buffer, 0)
+	copy(r.buffer[r.cursorPos+1:], r.buffer[r.cursorPos:])
+	r.buffer[r.cursorPos] = ch
+	r.cursorPos++
+	r.renderLine()
 }
 
 func (r *InputReader) autocomplete() {
@@ -207,9 +235,9 @@ func (r *InputReader) autocomplete() {
 	if strings.HasPrefix(input, "/connect ") {
 		provInput := strings.TrimPrefix(input, "/connect ")
 		var matches []string
-		for _, p := range providers {
-			if strings.HasPrefix(p, provInput) {
-				matches = append(matches, "/connect "+p)
+		for _, slug := range providerSlugs() {
+			if strings.HasPrefix(slug, provInput) {
+				matches = append(matches, "/connect "+slug)
 			}
 		}
 
@@ -248,17 +276,90 @@ func (r *InputReader) autocomplete() {
 }
 
 func (r *InputReader) renderLine() {
+	terminalMu.Lock()
+	defer terminalMu.Unlock()
+
 	height := getTerminalHeight()
-	inputRow := height - 1
+	inputRow := r.promptRow
+	if inputRow <= 0 || inputRow >= height {
+		inputRow = height - 1
+	}
 	if inputRow < 1 {
 		inputRow = 1
 	}
 
-	fmt.Printf("\033[%d;1H\033[2K> ", inputRow)
-	fmt.Print(string(r.buffer))
-	if r.cursorPos < len(r.buffer) {
-		fmt.Printf("\033[%dG", 2+r.cursorPos)
+	lines := strings.Split(string(r.buffer), "\n")
+	rows := len(lines)
+	if rows < 1 {
+		rows = 1
 	}
+
+	clearRows := r.renderedRows
+	if rows > clearRows {
+		clearRows = rows
+	}
+	startRow := inputRow - clearRows + 1
+	if startRow < 1 {
+		startRow = 1
+	}
+	for row := startRow; row <= inputRow; row++ {
+		fmt.Printf("\033[%d;1H\033[2K", row)
+	}
+
+	firstLine := 0
+	if rows > inputRow {
+		firstLine = rows - inputRow
+	}
+	drawStartRow := inputRow - (rows - firstLine) + 1
+	if drawStartRow < 1 {
+		drawStartRow = 1
+	}
+
+	for i := firstLine; i < rows; i++ {
+		row := drawStartRow + i - firstLine
+		prefix := "  "
+		if i == 0 {
+			prefix = "> "
+		}
+		fmt.Printf("\033[%d;1H%s%s", row, prefix, lines[i])
+	}
+
+	cursorRow, cursorCol := r.cursorPosition(lines, firstLine, drawStartRow)
+	fmt.Printf("\033[%d;%dH", cursorRow, cursorCol)
+	r.renderedRows = rows
+}
+
+func (r *InputReader) cursorPosition(lines []string, firstLine int, drawStartRow int) (int, int) {
+	lineIndex := 0
+	col := 0
+	for i, ch := range r.buffer {
+		if i == r.cursorPos {
+			break
+		}
+		if ch == '\n' {
+			lineIndex++
+			col = 0
+		} else {
+			col++
+		}
+	}
+
+	if r.cursorPos == len(r.buffer) {
+		lineIndex = len(lines) - 1
+		if lineIndex < 0 {
+			lineIndex = 0
+		}
+		col = len([]rune(lines[lineIndex]))
+	}
+
+	if lineIndex < firstLine {
+		lineIndex = firstLine
+		col = 0
+	}
+
+	row := drawStartRow + lineIndex - firstLine
+	prefixLen := 2
+	return row, prefixLen + col + 1
 }
 
 func (r *InputReader) IsVimQuit(input string) bool {
