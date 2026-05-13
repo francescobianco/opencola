@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/opencola/opencola/provider"
-	"github.com/opencola/opencola/session"
-	"github.com/opencola/opencola/tools"
+	"github.com/francescobianco/opencola/provider"
+	"github.com/francescobianco/opencola/session"
+	"github.com/francescobianco/opencola/tools"
 )
 
 type Agent struct {

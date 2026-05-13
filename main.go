@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/opencola/opencola/cmd"
+	"github.com/francescobianco/opencola/cmd"
 )
 
 func main() {

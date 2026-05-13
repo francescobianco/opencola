@@ -9,10 +9,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opencola/opencola/agent"
-	"github.com/opencola/opencola/config"
-	"github.com/opencola/opencola/provider"
-	"github.com/opencola/opencola/tools"
+	"github.com/francescobianco/opencola/agent"
+	"github.com/francescobianco/opencola/config"
+	"github.com/francescobianco/opencola/provider"
+	"github.com/francescobianco/opencola/tools"
 	"golang.org/x/term"
 )
 
@@ -188,7 +188,7 @@ func (t *TUI) renderInitialLayout(showBanner bool) {
 	t.reserveStatusLine()
 
 	if showBanner {
-		freeLines := height - 8
+		freeLines := height - 7
 		if freeLines < 0 {
 			freeLines = 0
 		}
@@ -326,6 +326,7 @@ func (t *TUI) handleCommand(input string) bool {
 		fmt.Println("  /clear                     Clear the screen")
 		fmt.Println("  /status                    Show current status")
 		fmt.Println("  /exit, /quit, :q           Exit the program")
+		fmt.Println("  quit, exit                 Exit the program (no slash)")
 
 	case "/connect":
 		if len(parts) < 2 {

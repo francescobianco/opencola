@@ -1,6 +1,6 @@
 package session
 
-import "github.com/opencola/opencola/provider"
+import "github.com/francescobianco/opencola/provider"
 
 type Session struct {
 	Messages []provider.Message

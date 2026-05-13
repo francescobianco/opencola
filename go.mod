@@ -1,4 +1,4 @@
-module github.com/opencola/opencola
+module github.com/francescobianco/opencola
 
 go 1.25.0
 
