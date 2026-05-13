@@ -5,7 +5,7 @@ Development Note: Clear the terminal before render first output
 ```output
 .
 .
-. [ free space above the banner . . . ]
+. [ free space above the banner it is variable depends of the terminal rows height . . . ]
 .
 .
 OpenCola - minimal codind agent
@@ -17,6 +17,7 @@ by Francesco Bianco <bianco@javanile.org>
 ```
 
 The logo " OpenCola v0.1.0 " is inverse with white background and dark blue text, while the rest of the status bar is dark blue with white text.
+On the banner "OpenCola" must be in bold while the rest of the text in normal weight and color
 
 ## Bye bye screen 
 

@@ -43,6 +43,10 @@ func (p *OpenAIProvider) ModelName() string {
 	return p.model
 }
 
+func (p *OpenAIProvider) SetModel(model string) {
+	p.model = model
+}
+
 func (p *OpenAIProvider) Chat(ctx context.Context, messages []Message, tools []ToolDefinition) (Response, error) {
 	var openaiMessages []openai.ChatCompletionMessage
 	for _, m := range messages {

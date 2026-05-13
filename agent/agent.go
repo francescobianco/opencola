@@ -58,6 +58,12 @@ func (a *Agent) ModelName() string {
 	return a.provider.ModelName()
 }
 
+func (a *Agent) SetModel(model string) {
+	if a.provider != nil {
+		a.provider.SetModel(model)
+	}
+}
+
 func (a *Agent) Run(ctx context.Context, input string) (string, error) {
 	if a.provider == nil {
 		return "", fmt.Errorf("not connected to any provider. Use /connect to connect first")

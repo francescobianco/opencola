@@ -31,6 +31,7 @@ type ModelInfo struct {
 type Provider interface {
 	Name() string
 	ModelName() string
+	SetModel(model string)
 	Chat(ctx context.Context, messages []Message, tools []ToolDefinition) (Response, error)
 	ListModels(ctx context.Context) ([]ModelInfo, error)
 }

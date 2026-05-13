@@ -202,6 +202,29 @@ func (r *InputReader) autocomplete() {
 		return
 	}
 
+	if strings.HasPrefix(input, "/connect ") {
+		provInput := strings.TrimPrefix(input, "/connect ")
+		var matches []string
+		for _, p := range providers {
+			if strings.HasPrefix(p, provInput) {
+				matches = append(matches, "/connect "+p)
+			}
+		}
+
+		if len(matches) == 1 {
+			r.buffer = []rune(matches[0] + " ")
+			r.cursorPos = len(r.buffer)
+			r.renderLine()
+		} else if len(matches) > 1 {
+			fmt.Println()
+			for _, m := range matches {
+				fmt.Printf("  %s\n", m)
+			}
+			r.renderLine()
+		}
+		return
+	}
+
 	var matches []string
 	for _, cmd := range slashCommands {
 		if strings.HasPrefix(cmd, input) {

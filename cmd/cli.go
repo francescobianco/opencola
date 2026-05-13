@@ -1,19 +1,24 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/opencola/opencola/agent"
 	"github.com/opencola/opencola/config"
 	"github.com/opencola/opencola/provider"
 	"github.com/opencola/opencola/tools"
+	"golang.org/x/term"
 )
 
 const version = "0.1.0"
 const author = "by Francesco Bianco <bianco@javanile.org>"
+
+var providers = []string{"opencode", "opencode-go", "opencode-zen"}
 
 func Run() error {
 	fmt.Print("\033[2J\033[H")
@@ -29,8 +34,8 @@ func Run() error {
 
 	if envCfg.APIKey != "" && cfg.ActiveProvider() == nil {
 		cfg.AddProvider(config.ProviderConfig{
-			Name:     "openai",
-			Provider: "openai",
+			Name:     "opencode",
+			Provider: "opencode",
 			APIKey:   envCfg.APIKey,
 			BaseURL:  envCfg.BaseURL,
 			Model:    envCfg.Model,
@@ -47,7 +52,7 @@ func Run() error {
 	ag := agent.New(nil, toolList)
 
 	if p := cfg.ActiveProvider(); p != nil && p.APIKey != "" {
-		prov := provider.NewOpenAI(p.APIKey, p.Model, p.BaseURL)
+		prov := newProvider(p.Provider, p.APIKey, p.Model, p.BaseURL)
 		ag.SetProvider(prov)
 	}
 
@@ -113,7 +118,7 @@ func printBanner() {
 	for i := 0; i < height/3; i++ {
 		fmt.Println()
 	}
-	fmt.Println("OpenCola - minimal coding agent")
+	fmt.Printf("\033[1mOpenCola\033[0m - minimal coding agent\n")
 	fmt.Println(author)
 	fmt.Println()
 	fmt.Print("> ")
@@ -126,40 +131,44 @@ func handleCommand(input string, ag *agent.Agent, cfg *config.Config, cfgPath st
 	switch cmd {
 	case "/help":
 		fmt.Println("Available commands:")
-		fmt.Println("  /connect <provider> <api_key> [base_url]  - Connect to a provider")
-		fmt.Println("  /models                                   - List available models")
-		fmt.Println("  /reset                                    - Reset conversation")
-		fmt.Println("  /clear                                    - Clear the screen")
-		fmt.Println("  /status                                   - Show current status")
-		fmt.Println("  /exit, /quit, :q                          - Exit the program")
-		fmt.Println("  /help                                     - Show this help")
+		fmt.Println("  /connect <provider>                     - Connect to a provider")
+		fmt.Println("  /models                                 - Select a model")
+		fmt.Println("  /reset                                  - Reset conversation")
+		fmt.Println("  /clear                                  - Clear the screen")
+		fmt.Println("  /status                                 - Show current status")
+		fmt.Println("  /exit, /quit, :q                        - Exit the program")
+		fmt.Println("  /help                                   - Show this help")
 
 	case "/connect":
-		if len(parts) < 3 {
-			fmt.Println("Usage: /connect <provider> <api_key> [base_url]")
-			fmt.Println("  provider: openai")
+		if len(parts) < 2 {
+			fmt.Println("Usage: /connect <provider>")
+			fmt.Printf("  providers: %s\n", strings.Join(providers, ", "))
 			return false
 		}
 
 		provType := parts[1]
-		apiKey := parts[2]
-		baseURL := ""
-		model := ""
-		if len(parts) > 3 {
-			baseURL = parts[3]
-		}
-		if len(parts) > 4 {
-			model = parts[4]
-		}
-
-		var prov provider.Provider
-		switch provType {
-		case "openai":
-			prov = provider.NewOpenAI(apiKey, model, baseURL)
-		default:
+		if !slices.Contains(providers, provType) {
 			fmt.Printf("Unknown provider: %s\n", provType)
+			fmt.Printf("Available: %s\n", strings.Join(providers, ", "))
 			return false
 		}
+
+		fmt.Printf("Please enter your API key for %s: ", provType)
+
+		fd := int(os.Stdin.Fd())
+		state, _ := term.MakeRaw(fd)
+		apiKey, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+		term.Restore(fd, state)
+		apiKey = strings.TrimSpace(apiKey)
+		fmt.Println()
+
+		if apiKey == "" {
+			fmt.Println("API key is required")
+			return false
+		}
+
+		baseURL := getProviderBaseURL(provType)
+		prov := newProvider(provType, apiKey, "", baseURL)
 
 		ag.SetProvider(prov)
 		cfg.AddProvider(config.ProviderConfig{
@@ -167,30 +176,31 @@ func handleCommand(input string, ag *agent.Agent, cfg *config.Config, cfgPath st
 			Provider: provType,
 			APIKey:   apiKey,
 			BaseURL:  baseURL,
-			Model:    model,
 		})
-		if err := cfg.Save(cfgPath); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to save config: %v\n", err)
-		}
+		cfg.Save(cfgPath)
 
 		envCfg.APIKey = apiKey
 		envCfg.BaseURL = baseURL
-		envCfg.Model = model
-		if err := envCfg.Save(envPath); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to save env config: %v\n", err)
-		}
+		envCfg.Save(envPath)
 
 		fmt.Printf("Connected to %s\n", prov.Name())
 
 	case "/models":
+		if !ag.IsConnected() {
+			fmt.Println("Not connected to any provider. Use /connect first.")
+			return false
+		}
+
 		models, err := ag.ListModels(ctx)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			return false
 		}
-		fmt.Println("Available models:")
-		for _, m := range models {
-			fmt.Printf("  %s\n", m.ID)
+
+		selected := showModelMenu(models)
+		if selected != "" {
+			ag.SetModel(selected)
+			fmt.Printf("Selected model: %s\n", selected)
 		}
 
 	case "/reset":
@@ -212,6 +222,69 @@ func handleCommand(input string, ag *agent.Agent, cfg *config.Config, cfgPath st
 	}
 
 	return false
+}
+
+func showModelMenu(models []provider.ModelInfo) string {
+	if len(models) == 0 {
+		fmt.Println("No models available")
+		return ""
+	}
+
+	maxShow := 4
+	if len(models) < maxShow {
+		maxShow = len(models)
+	}
+
+	selected := 0
+
+	fd := int(os.Stdin.Fd())
+	state, _ := term.MakeRaw(fd)
+	defer term.Restore(fd, state)
+
+	reader := bufio.NewReader(os.Stdin)
+
+	for {
+		fmt.Println()
+		for i := 0; i < maxShow; i++ {
+			idx := i
+			if idx >= len(models) {
+				break
+			}
+			cursor := "  "
+			if i == selected {
+				cursor = "> "
+			}
+			fmt.Printf("%s %s\n", cursor, models[idx].ID)
+		}
+
+		b, _, _ := reader.ReadRune()
+		switch b {
+		case 'A':
+			if selected > 0 {
+				selected--
+			}
+			fmt.Printf("\033[%dA", maxShow)
+			for i := 0; i < maxShow; i++ {
+				fmt.Print("\033[2K\033[G")
+			}
+
+		case 'B':
+			if selected < maxShow-1 && selected < len(models)-1 {
+				selected++
+			}
+			fmt.Printf("\033[%dA", maxShow)
+			for i := 0; i < maxShow; i++ {
+				fmt.Print("\033[2K\033[G")
+			}
+
+		case '\r', '\n':
+			for i := 0; i < maxShow; i++ {
+				fmt.Print("\033[2K\033[G")
+			}
+			fmt.Print("\033[1A\033[2K\033[G")
+			return models[selected].ID
+		}
+	}
 }
 
 func drawStatusBar(ag *agent.Agent) {
@@ -256,4 +329,19 @@ func printGoodbye() {
 	fmt.Println()
 	fmt.Println("Goodbye! Thanks for using OpenCola. See you next time!")
 	fmt.Println()
+}
+
+func newProvider(name, apiKey, model, baseURL string) provider.Provider {
+	return provider.NewOpenAI(apiKey, model, baseURL)
+}
+
+func getProviderBaseURL(name string) string {
+	switch name {
+	case "opencode-go":
+		return "https://go.opencode.ai/v1"
+	case "opencode-zen":
+		return "https://zen.opencode.ai/v1"
+	default:
+		return "https://api.openai.com/v1"
+	}
 }
