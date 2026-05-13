@@ -23,7 +23,6 @@ const author = "by Francesco Bianco <bianco@javanile.org>"
 var providers = []string{"opencode", "opencode-go", "opencode-zen"}
 
 var spinnerBuffer = []byte("...||")
-var spinnerBufferInit = []byte("...||")
 
 type TUI struct {
 	ag          *agent.Agent
@@ -360,8 +359,7 @@ func (t *TUI) toggleSpinner() {
 	defer t.spinnerMu.Unlock()
 
 	t.spinning = !t.spinning
-	spinnerBuffer = make([]byte, len(spinnerBufferInit))
-	copy(spinnerBuffer, spinnerBufferInit)
+	spinnerBuffer = []byte("...||")
 	t.input.Spinning = t.spinning
 }
 
