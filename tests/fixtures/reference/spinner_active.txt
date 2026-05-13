@@ -1,0 +1,3 @@
+-=- OpenCola v0.1.0  Provider: none  Model: none  Status: Disconnected
+
+ -  OpenCola v0.1.0  Provider: none  Model: none  Status: Disconnected

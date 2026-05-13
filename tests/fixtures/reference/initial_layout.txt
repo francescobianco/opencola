@@ -1,0 +1,11 @@
+
+
+
+
+OpenCola - minimal coding agent
+by Francesco Bianco <bianco@javanile.org>
+Type /help for a list of commands.
+
+>
+
+ -  OpenCola v0.1.0  Provider: none  Model: none  Status: Disconnected

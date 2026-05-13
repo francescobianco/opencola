@@ -209,7 +209,7 @@ func (t *TUI) renderStatusBar() {
 	fmt.Printf("\033[%d;1H", height)
 	fmt.Print("\033[2K")
 
-	fmt.Print(bar[:frameLen])
+	fmt.Printf("\033[48;2;30;64;120m\033[38;2;255;255;255m%s\033[0m", bar[:frameLen])
 
 	fmt.Printf("\033[48;2;255;255;255m\033[38;2;30;64;120m%s\033[0m", bar[frameLen:frameLen+logoLen])
 	fmt.Printf("\033[48;2;30;64;120m\033[38;2;255;255;255m%s\033[0m", bar[frameLen+logoLen:])
@@ -330,10 +330,11 @@ func (t *TUI) startSpinner() {
 				t.spinnerMu.Lock()
 				if t.spinning {
 					t.spinnerIdx = (t.spinnerIdx + 1) % len(spinnerFrames)
-					t.renderStatusBar()
-					t.renderPrompt()
 				}
 				t.spinnerMu.Unlock()
+				if t.spinning {
+					t.renderStatusBar()
+				}
 			}
 		}
 	}()
@@ -352,9 +353,7 @@ func (t *TUI) toggleSpinner() {
 	defer t.spinnerMu.Unlock()
 
 	t.spinning = !t.spinning
-	if t.spinning {
-		t.spinnerIdx = 0
-	}
+	t.spinnerIdx = 0
 
 	if t.spinning {
 		fmt.Println("Spinner started")
