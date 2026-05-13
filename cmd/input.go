@@ -4,9 +4,22 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"slices"
+	"strings"
 
 	"golang.org/x/term"
 )
+
+var slashCommands = []string{
+	"/connect",
+	"/models",
+	"/reset",
+	"/clear",
+	"/status",
+	"/help",
+	"/exit",
+	"/quit",
+}
 
 type InputReader struct {
 	history       []string
@@ -41,7 +54,9 @@ func (r *InputReader) LoadHistory(path string) {
 
 func (r *InputReader) SaveHistory(path string) {
 	dir := path[:lastIndex(path, "/")]
-	os.MkdirAll(dir, 0755)
+	if dir != "" {
+		os.MkdirAll(dir, 0755)
+	}
 
 	f, err := os.Create(path)
 	if err != nil {
@@ -101,6 +116,9 @@ func (r *InputReader) ReadLine() (string, error) {
 			r.historyIndex = len(r.history)
 			return line, nil
 
+		case 3:
+			return "", fmt.Errorf("interrupt")
+
 		case 127, '\b':
 			if r.cursorPos > 0 {
 				r.buffer = append(r.buffer[:r.cursorPos-1], r.buffer[r.cursorPos:]...)
@@ -115,6 +133,9 @@ func (r *InputReader) ReadLine() (string, error) {
 		case 5:
 			r.cursorPos = len(r.buffer)
 			r.renderLine()
+
+		case '\t':
+			r.autocomplete()
 
 		case 27:
 			b2, _, _ := reader.ReadRune()
@@ -175,10 +196,40 @@ func (r *InputReader) ReadLine() (string, error) {
 	}
 }
 
+func (r *InputReader) autocomplete() {
+	input := string(r.buffer[:r.cursorPos])
+	if !strings.HasPrefix(input, "/") {
+		return
+	}
+
+	var matches []string
+	for _, cmd := range slashCommands {
+		if strings.HasPrefix(cmd, input) {
+			matches = append(matches, cmd)
+		}
+	}
+
+	if len(matches) == 1 {
+		r.buffer = []rune(matches[0] + " ")
+		r.cursorPos = len(r.buffer)
+		r.renderLine()
+	} else if len(matches) > 1 {
+		fmt.Println()
+		for _, m := range matches {
+			fmt.Printf("  %s\n", m)
+		}
+		r.renderLine()
+	}
+}
+
 func (r *InputReader) renderLine() {
 	fmt.Print("\033[2K\033[G> ")
 	fmt.Print(string(r.buffer))
 	if r.cursorPos < len(r.buffer) {
 		fmt.Printf("\033[%dG", 2+r.cursorPos)
 	}
+}
+
+func (r *InputReader) IsVimQuit(input string) bool {
+	return slices.Contains([]string{":q", ":q!", ":wq", ":wq!"}, strings.TrimSpace(input))
 }

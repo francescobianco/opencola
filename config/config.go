@@ -1,9 +1,10 @@
 package config
 
 import (
-	"encoding/json"
+	"bufio"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type ProviderConfig struct {
@@ -19,12 +20,26 @@ type Config struct {
 	ActiveIndex int              `json:"active_index"`
 }
 
+type EnvConfig struct {
+	APIKey  string
+	BaseURL string
+	Model   string
+}
+
 func DefaultConfigPath() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ".opencola.json"
 	}
 	return filepath.Join(home, ".config", "opencola", "config.json")
+}
+
+func DefaultEnvPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ".opencolarc"
+	}
+	return filepath.Join(home, ".opencolarc")
 }
 
 func DefaultHistoryPath() string {
@@ -42,7 +57,7 @@ func Load(path string) (*Config, error) {
 	}
 
 	var cfg Config
-	if err := json.Unmarshal(data, &cfg); err != nil {
+	if err := unmarshalJSON(data, &cfg); err != nil {
 		return &Config{}, nil
 	}
 	return &cfg, nil
@@ -54,7 +69,7 @@ func (c *Config) Save(path string) error {
 		return err
 	}
 
-	data, err := json.MarshalIndent(c, "", "  ")
+	data, err := marshalJSON(c)
 	if err != nil {
 		return err
 	}
@@ -75,4 +90,68 @@ func (c *Config) AddProvider(p ProviderConfig) {
 
 func (c *Config) ListProviders() []ProviderConfig {
 	return c.Providers
+}
+
+func LoadEnv(path string) *EnvConfig {
+	cfg := &EnvConfig{}
+
+	f, err := os.Open(path)
+	if err != nil {
+		return cfg
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		key := strings.TrimSpace(parts[0])
+		val := strings.TrimSpace(parts[1])
+		val = strings.Trim(val, "\"'")
+
+		switch key {
+		case "OPENAI_API_KEY", "API_KEY":
+			cfg.APIKey = val
+		case "OPENAI_BASE_URL", "BASE_URL":
+			cfg.BaseURL = val
+		case "OPENAI_MODEL", "MODEL":
+			cfg.Model = val
+		}
+	}
+
+	return cfg
+}
+
+func (e *EnvConfig) Save(path string) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	f.WriteString("# OpenCola configuration (.env format)\n")
+	if e.APIKey != "" {
+		f.WriteString("OPENAI_API_KEY=" + e.APIKey + "\n")
+	}
+	if e.BaseURL != "" {
+		f.WriteString("OPENAI_BASE_URL=" + e.BaseURL + "\n")
+	}
+	if e.Model != "" {
+		f.WriteString("OPENAI_MODEL=" + e.Model + "\n")
+	}
+
+	return nil
 }
