@@ -27,6 +27,14 @@ func DefaultConfigPath() string {
 	return filepath.Join(home, ".config", "opencola", "config.json")
 }
 
+func DefaultHistoryPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ".opencola_history"
+	}
+	return filepath.Join(home, ".config", "opencola", "history")
+}
+
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

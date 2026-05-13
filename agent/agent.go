@@ -51,6 +51,13 @@ func (a *Agent) ProviderName() string {
 	return a.provider.Name()
 }
 
+func (a *Agent) ModelName() string {
+	if a.provider == nil {
+		return "none"
+	}
+	return a.provider.ModelName()
+}
+
 func (a *Agent) Run(ctx context.Context, input string) (string, error) {
 	if a.provider == nil {
 		return "", fmt.Errorf("not connected to any provider. Use /connect to connect first")
