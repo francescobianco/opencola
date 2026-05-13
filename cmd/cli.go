@@ -334,9 +334,9 @@ func (t *TUI) startSpinner() {
 			case <-ticker.C:
 				t.spinnerMu.Lock()
 				if t.spinning {
-					last := spinnerBuffer[len(spinnerBuffer)-1]
-					copy(spinnerBuffer[1:], spinnerBuffer[:len(spinnerBuffer)-1])
-					spinnerBuffer[0] = last
+					first := spinnerBuffer[0]
+					copy(spinnerBuffer[:len(spinnerBuffer)-1], spinnerBuffer[1:])
+					spinnerBuffer[len(spinnerBuffer)-1] = first
 				}
 				t.spinnerMu.Unlock()
 				if t.spinning {

@@ -44,7 +44,7 @@ The status bar is always visible on the last terminal row.
 
 **Spinner:**
 - 3 characters wide, positioned at the far left of the status bar
-- Continuous flow animation using character right-rotation: `...`, `|..`, `||.`, `.||`, `..|`
+- Continuous flow animation using character left-rotation (pop first, append last): `...`, `|..`, `||.`, `.||`, `..|`
 - 50ms interval between frames (full cycle in 250ms)
 - Toggled by the hidden `/spin` command (not documented in `/help`)
 - Resets to initial state on each toggle
