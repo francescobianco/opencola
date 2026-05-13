@@ -146,19 +146,22 @@ func (t *TUI) renderInitialLayout() {
 
 	fmt.Print("\033[2J\033[H")
 
-	bannerRows := 4
-	startRow := (height - 2 - bannerRows) / 2
-	if startRow < 1 {
-		startRow = 1
+	freeLines := height - 7
+	if freeLines < 0 {
+		freeLines = 0
 	}
 
-	for i := 0; i < startRow; i++ {
+	for i := 0; i < freeLines; i++ {
 		fmt.Println()
 	}
 
 	fmt.Printf("\033[1mOpenCola\033[0m - minimal coding agent\n")
 	fmt.Println(author)
+	fmt.Println("Type /help for a list of commands.")
 	fmt.Println()
+
+	fmt.Printf("\033[%d;1H", height-2)
+	fmt.Print("\033[2K")
 	fmt.Print("> ")
 
 	t.renderStatusBar()
@@ -166,7 +169,7 @@ func (t *TUI) renderInitialLayout() {
 
 func (t *TUI) renderPrompt() {
 	height := getTerminalHeight()
-	fmt.Printf("\033[%d;1H", height-1)
+	fmt.Printf("\033[%d;1H", height-2)
 	fmt.Print("\033[2K")
 	fmt.Print("> ")
 }
@@ -337,7 +340,11 @@ func (t *TUI) startSpinner() {
 }
 
 func (t *TUI) stopSpinner() {
-	close(t.spinnerDone)
+	select {
+	case <-t.spinnerDone:
+	default:
+		close(t.spinnerDone)
+	}
 }
 
 func (t *TUI) toggleSpinner() {
@@ -345,7 +352,7 @@ func (t *TUI) toggleSpinner() {
 	defer t.spinnerMu.Unlock()
 
 	t.spinning = !t.spinning
-	if !t.spinning {
+	if t.spinning {
 		t.spinnerIdx = 0
 	}
 
@@ -376,6 +383,7 @@ func showModelMenu(models []provider.ModelInfo) string {
 	}
 
 	selected := 0
+	offset := 0
 
 	fd := int(os.Stdin.Fd())
 	state, _ := term.MakeRaw(fd)
@@ -383,43 +391,55 @@ func showModelMenu(models []provider.ModelInfo) string {
 
 	reader := bufio.NewReader(os.Stdin)
 
-	for {
+	renderMenu := func() {
 		fmt.Println()
 		for i := 0; i < maxShow; i++ {
-			if i >= len(models) {
+			idx := offset + i
+			if idx >= len(models) {
 				break
 			}
 			cursor := "  "
-			if i == selected {
+			if idx == selected {
 				cursor = "> "
 			}
-			fmt.Printf("%s %s\n", cursor, models[i].ID)
+			fmt.Printf("%s %s\n", cursor, models[idx].ID)
 		}
+	}
 
+	clearMenu := func() {
+		fmt.Printf("\033[%dA", maxShow+1)
+		for i := 0; i < maxShow+1; i++ {
+			fmt.Print("\033[2K\033[G")
+		}
+	}
+
+	renderMenu()
+
+	for {
 		b, _, _ := reader.ReadRune()
 		switch b {
 		case 'A':
 			if selected > 0 {
 				selected--
+				if selected < offset {
+					offset = selected
+				}
 			}
-			fmt.Printf("\033[%dA", maxShow+1)
-			for i := 0; i < maxShow+1; i++ {
-				fmt.Print("\033[2K\033[G")
-			}
+			clearMenu()
+			renderMenu()
 
 		case 'B':
-			if selected < maxShow-1 && selected < len(models)-1 {
+			if selected < len(models)-1 {
 				selected++
+				if selected >= offset+maxShow {
+					offset = selected - maxShow + 1
+				}
 			}
-			fmt.Printf("\033[%dA", maxShow+1)
-			for i := 0; i < maxShow+1; i++ {
-				fmt.Print("\033[2K\033[G")
-			}
+			clearMenu()
+			renderMenu()
 
 		case '\r', '\n':
-			for i := 0; i < maxShow+1; i++ {
-				fmt.Print("\033[2K\033[G")
-			}
+			clearMenu()
 			fmt.Print("\033[1A\033[2K\033[G")
 			return models[selected].ID
 		}
@@ -427,7 +447,7 @@ func showModelMenu(models []provider.ModelInfo) string {
 }
 
 func newProvider(name, apiKey, model, baseURL string) provider.Provider {
-	return provider.NewOpenAI(apiKey, model, baseURL)
+	return provider.NewOpenAI(name, apiKey, model, baseURL)
 }
 
 func getProviderBaseURL(name string) string {

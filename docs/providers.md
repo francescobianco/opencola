@@ -1,27 +1,42 @@
+# Provider System
 
+This document describes how provider connection, authentication, and model selection work in OpenCola.
 
-la selezione dei provaider deve essre auto comepletata 
+## Available Providers
 
-opencode e il default pero esistono altri provider derivati 
-infatti esso a due side provider opencode-go e opencode-zen 
+- `opencode` — default provider
+- `opencode-go` — side provider (Go-specific models)
+- `opencode-zen` — side provider (Zen-specific models)
 
-se si sceglie un side provider allora si potranno sceglire solo i modeli di quel provider
+## Provider Selection
 
-la chiave non edeve essere insierita inline ma alla chimata
-
-```
-/connect opencode-go [Invio]
-```
-
-sotto apparira un prompt che richiede di incollare o digirate la chiave API 
+Provider names are autocompleted with Tab during `/connect`:
 
 ```
-> /connect opencode-go [Invio]
-Please enter your API key for opencode go: 
+/connect open[TAB]     →  /connect opencode
+/connect opencode-[TAB] →  displays: opencode-go, opencode-zen
 ```
 
-la lista dei modelli
+## API Key Handling
 
-quando si chiama il comando /models deve mostrare solo i modelli disponibili per il provider connesso
-qusto mostrera un menu di seleezione del modello che si epandera per 4 righe sotto il prompt l'esperienza un cursos "> " sara a sinistra del modello che si sceglie dopo invio
-avrai scelto il modello e questo sara mostrato nella status bar al posto di "none"
+The API key is never entered inline. After selecting a provider, a separate prompt appears:
+
+```
+> /connect opencode-go
+Please enter your API key for opencode-go:
+```
+
+The key is stored in `~/.config/opencola/config.json` and `~/.opencolarc`.
+
+## Model Listing
+
+When `/models` is called, only models available for the connected provider are fetched. Side providers (`opencode-go`, `opencode-zen`) only expose their own model sets.
+
+## Model Selection Menu
+
+The model menu appears below the prompt and displays up to 4 models at a time:
+
+- A `> ` cursor marks the current selection
+- Up/Down arrow keys navigate the list (scrolling if more than 4 models)
+- Enter confirms the selection
+- The selected model appears in the status bar

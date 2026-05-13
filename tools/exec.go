@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"os/exec"
 )
 
@@ -28,8 +29,17 @@ func (e ExecTool) Parameters() map[string]any {
 	}
 }
 
+type execArgs struct {
+	Command string `json:"command"`
+}
+
 func (e ExecTool) Execute(ctx context.Context, args string) (string, error) {
-	cmd := exec.CommandContext(ctx, "sh", "-c", args)
+	var parsed execArgs
+	if err := json.Unmarshal([]byte(args), &parsed); err != nil {
+		return "", err
+	}
+
+	cmd := exec.CommandContext(ctx, "sh", "-c", parsed.Command)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return string(output), err

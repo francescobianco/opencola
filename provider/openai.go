@@ -15,12 +15,15 @@ type OpenAIProvider struct {
 	name   string
 }
 
-func NewOpenAI(apiKey, model, baseURL string) *OpenAIProvider {
+func NewOpenAI(name, apiKey, model, baseURL string) *OpenAIProvider {
 	if apiKey == "" {
 		apiKey = os.Getenv("OPENAI_API_KEY")
 	}
 	if model == "" {
 		model = "gpt-4o"
+	}
+	if name == "" {
+		name = "openai"
 	}
 
 	cfg := openai.DefaultConfig(apiKey)
@@ -31,7 +34,7 @@ func NewOpenAI(apiKey, model, baseURL string) *OpenAIProvider {
 	return &OpenAIProvider{
 		client: openai.NewClientWithConfig(cfg),
 		model:  model,
-		name:   "openai",
+		name:   name,
 	}
 }
 

@@ -8,12 +8,12 @@ On startup, the terminal is cleared and the layout is rendered as follows:
 
 ```
 .
-.
 . [ free space above the banner — variable, depends on terminal height ]
 .
 .
 OpenCola - minimal coding agent
 by Francesco Bianco <bianco@javanile.org>
+Type /help for a list of commands.
 . [ one blank line below the banner ]
 >
 . [ one blank line below the prompt ]
@@ -21,10 +21,11 @@ by Francesco Bianco <bianco@javanile.org>
 ```
 
 **Positioning rules:**
-- The banner is vertically centered in the available space between the top of the terminal and the status bar area
-- Free space above the banner is variable — it scales with terminal height
+- The banner is at a fixed position from the bottom, not centered
+- Counting from the bottom: status bar (1 row), blank line (1 row), prompt (1 row), blank line (1 row), banner (3 rows)
+- All remaining rows above the banner are free space — variable, depends on terminal height
 - Exactly one blank line separates the banner from the prompt
-- The prompt (`> `) is always one line above the status bar
+- The prompt (`> `) is always one line above the blank line that sits above the status bar
 - The status bar occupies the last line of the terminal at all times
 
 ## Status Bar
@@ -43,7 +44,7 @@ The status bar is always visible on the last terminal row.
 
 **Spinner:**
 - 3 characters wide, positioned at the far left of the status bar
-- 9-frame animation sequence: ` - `, ` : `, ` = `, `-=−`, `=|=`, `-=−`, ` = `, ` : `, ` - `
+- 9-frame animation sequence: ` - `, ` : `, ` = `, `-=-`, `=|="`, `-=-`, ` = `, ` : `, ` - `
 - 100ms interval between frames
 - Toggled by the hidden `/spin` command (not documented in `/help`)
 - Resets to frame 0 when activated
@@ -53,6 +54,7 @@ The status bar is always visible on the last terminal row.
 ```
 OpenCola - minimal coding agent
 by Francesco Bianco <bianco@javanile.org>
+Type /help for a list of commands.
 ```
 
 - "OpenCola" is rendered in **bold**
