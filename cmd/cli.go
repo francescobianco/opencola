@@ -47,7 +47,7 @@ func Run() error {
 	ctx := context.Background()
 
 	for {
-		renderStatusBar(ag)
+		drawStatusBar(ag)
 		line, err := input.ReadLine()
 		if err != nil {
 			break
@@ -62,17 +62,20 @@ func Run() error {
 
 		if strings.HasPrefix(line, "/") {
 			handleCommand(line, ag, cfg, cfgPath, ctx)
+			drawStatusBar(ag)
 			continue
 		}
 
 		output, err := ag.Run(ctx, line)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			drawStatusBar(ag)
 			continue
 		}
 
 		fmt.Println(output)
 		fmt.Println()
+		drawStatusBar(ag)
 	}
 
 	return nil
@@ -143,7 +146,7 @@ func handleCommand(input string, ag *agent.Agent, cfg *config.Config, cfgPath st
 		fmt.Println("Session reset")
 
 	case "/status":
-		renderStatusBar(ag)
+		drawStatusBar(ag)
 
 	case "/exit", "/quit":
 		os.Exit(0)
@@ -153,7 +156,7 @@ func handleCommand(input string, ag *agent.Agent, cfg *config.Config, cfgPath st
 	}
 }
 
-func renderStatusBar(ag *agent.Agent) {
+func drawStatusBar(ag *agent.Agent) {
 	status := "Disconnected"
 	provName := "none"
 	modelName := "none"
@@ -165,6 +168,7 @@ func renderStatusBar(ag *agent.Agent) {
 	}
 
 	width := getTerminalWidth()
+	height := getTerminalHeight()
 
 	bar := fmt.Sprintf(" OpenCola v%s  |  Provider: %s  |  Model: %s  |  Status: %s ",
 		version, provName, modelName, status)
@@ -176,9 +180,9 @@ func renderStatusBar(ag *agent.Agent) {
 	padding := strings.Repeat(" ", width-len(bar))
 	bar += padding
 
-	fmt.Printf("\033[s")
-	fmt.Printf("\033[%d;1H", getTerminalHeight())
+	fmt.Printf("\033[%d;1H", height)
+	fmt.Printf("\033[2K")
 	fmt.Printf("\033[48;2;30;64;120m\033[38;2;255;255;255m%s\033[0m", bar)
-	fmt.Printf("\033[u")
-	fmt.Printf("\033[1A")
+	fmt.Printf("\033[%d;1H", height-1)
+	fmt.Printf("\033[2K")
 }

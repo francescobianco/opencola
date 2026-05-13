@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"strings"
 
 	"golang.org/x/term"
 )
@@ -41,7 +40,7 @@ func (r *InputReader) LoadHistory(path string) {
 }
 
 func (r *InputReader) SaveHistory(path string) {
-	dir := path[:strings.LastIndex(path, "/")]
+	dir := path[:lastIndex(path, "/")]
 	os.MkdirAll(dir, 0755)
 
 	f, err := os.Create(path)
@@ -59,6 +58,15 @@ func (r *InputReader) SaveHistory(path string) {
 	for _, line := range r.history[start:] {
 		fmt.Fprintln(f, line)
 	}
+}
+
+func lastIndex(s, sep string) int {
+	for i := len(s) - 1; i >= 0; i-- {
+		if s[i:i+1] == sep {
+			return i
+		}
+	}
+	return -1
 }
 
 func (r *InputReader) ReadLine() (string, error) {
@@ -86,7 +94,6 @@ func (r *InputReader) ReadLine() (string, error) {
 
 		switch b {
 		case '\r', '\n':
-			fmt.Println()
 			line := string(r.buffer)
 			if line != "" {
 				r.history = append(r.history, line)
@@ -101,28 +108,20 @@ func (r *InputReader) ReadLine() (string, error) {
 				r.renderLine()
 			}
 
-		case 0:
-			// Ctrl+Space or special sequences
-			continue
-
 		case 1:
-			// Ctrl+A - home
 			r.cursorPos = 0
 			r.renderLine()
 
 		case 5:
-			// Ctrl+E - end
 			r.cursorPos = len(r.buffer)
 			r.renderLine()
 
 		case 27:
-			// Escape sequence
 			b2, _, _ := reader.ReadRune()
 			if b2 == '[' {
 				b3, _, _ := reader.ReadRune()
 				switch b3 {
 				case 'A':
-					// Up arrow - history previous
 					if r.historyIndex > 0 {
 						r.historyIndex--
 						r.buffer = []rune(r.history[r.historyIndex])
@@ -131,7 +130,6 @@ func (r *InputReader) ReadLine() (string, error) {
 					}
 
 				case 'B':
-					// Down arrow - history next
 					if r.historyIndex < len(r.history)-1 {
 						r.historyIndex++
 						r.buffer = []rune(r.history[r.historyIndex])
@@ -145,22 +143,19 @@ func (r *InputReader) ReadLine() (string, error) {
 					}
 
 				case 'C':
-					// Right arrow
 					if r.cursorPos < len(r.buffer) {
 						r.cursorPos++
 						r.renderLine()
 					}
 
 				case 'D':
-					// Left arrow
 					if r.cursorPos > 0 {
 						r.cursorPos--
 						r.renderLine()
 					}
 
 				case '3':
-					// Delete
-					reader.ReadRune() // consume '~'
+					reader.ReadRune()
 					if r.cursorPos < len(r.buffer) {
 						r.buffer = append(r.buffer[:r.cursorPos], r.buffer[r.cursorPos+1:]...)
 						r.renderLine()
