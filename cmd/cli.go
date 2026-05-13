@@ -163,15 +163,18 @@ func Run() error {
 			continue
 		}
 
+		tui.enableSpinner()
 		output, err := tui.ag.RunWithHooks(tui.ctx, line, agent.RunHooks{
 			OnLog: tui.renderEventLog,
 		})
+		tui.disableSpinner()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			tui.renderStatusBar()
 			continue
 		}
 
+		tui.renderStatusBar()
 		tui.renderEventLog("assistant response ready")
 		fmt.Println(output)
 		fmt.Println()
@@ -183,6 +186,12 @@ func Run() error {
 
 func (t *TUI) renderInitialLayout(showBanner bool) {
 	height := getTerminalHeight()
+	width := getTerminalWidth()
+
+	// Clear status bar with spaces to prevent scrollback leak
+	fmt.Printf("\033[%d;1H", height)
+	fmt.Print("\033[2K")
+	fmt.Print(strings.Repeat(" ", width))
 
 	fmt.Print("\033[2J\033[H")
 	t.reserveStatusLine()
@@ -501,6 +510,21 @@ func (t *TUI) toggleSpinner() {
 
 	t.spinning = !t.spinning
 	spinnerBuffer = []byte(spinnerSeed)
+}
+
+func (t *TUI) enableSpinner() {
+	t.spinnerMu.Lock()
+	defer t.spinnerMu.Unlock()
+
+	t.spinning = true
+	spinnerBuffer = []byte(spinnerSeed)
+}
+
+func (t *TUI) disableSpinner() {
+	t.spinnerMu.Lock()
+	defer t.spinnerMu.Unlock()
+
+	t.spinning = false
 }
 
 func (t *TUI) printGoodbye() {

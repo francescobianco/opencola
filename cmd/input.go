@@ -312,11 +312,27 @@ func (r *InputReader) autocomplete() {
 	}
 }
 
+func (r *InputReader) visualRowsForLine(textLen, termWidth int) int {
+	if textLen == 0 {
+		return 1
+	}
+	available := termWidth - 2
+	if available < 1 {
+		available = 1
+	}
+	rows := (textLen + available - 1) / available
+	if rows < 1 {
+		rows = 1
+	}
+	return rows
+}
+
 func (r *InputReader) renderLine() {
 	terminalMu.Lock()
 	defer terminalMu.Unlock()
 
 	height := getTerminalHeight()
+	termWidth := getTerminalWidth()
 	inputRow := r.promptRow
 	if inputRow <= 0 || inputRow >= height {
 		inputRow = height - 1
@@ -326,14 +342,19 @@ func (r *InputReader) renderLine() {
 	}
 
 	lines := strings.Split(string(r.buffer), "\n")
-	rows := len(lines)
-	if rows < 1 {
-		rows = 1
+
+	// Calcola il numero totale di righe visuali (considerando il wrapping)
+	totalVisualRows := 0
+	visualRowsPerLine := make([]int, len(lines))
+	for i, line := range lines {
+		textLen := len([]rune(line))
+		visualRowsPerLine[i] = r.visualRowsForLine(textLen, termWidth)
+		totalVisualRows += visualRowsPerLine[i]
 	}
 
 	clearRows := r.renderedRows
-	if rows > clearRows {
-		clearRows = rows
+	if totalVisualRows > clearRows {
+		clearRows = totalVisualRows
 	}
 	startRow := inputRow - clearRows + 1
 	if startRow < 1 {
@@ -343,41 +364,82 @@ func (r *InputReader) renderLine() {
 		fmt.Printf("\033[%d;1H\033[2K", row)
 	}
 
+	// Determina quali linee mostrare se non entrano tutte nello schermo
 	firstLine := 0
-	if rows > inputRow {
-		firstLine = rows - inputRow
+	visualRowsShown := 0
+	if totalVisualRows > inputRow {
+		remaining := inputRow
+		for i := len(lines) - 1; i >= 0; i-- {
+			if visualRowsPerLine[i] <= remaining {
+				remaining -= visualRowsPerLine[i]
+				firstLine = i
+			} else {
+				firstLine = i
+				break
+			}
+		}
+		for i := firstLine; i < len(lines); i++ {
+			visualRowsShown += visualRowsPerLine[i]
+		}
+	} else {
+		visualRowsShown = totalVisualRows
 	}
-	drawStartRow := inputRow - (rows - firstLine) + 1
+
+	drawStartRow := inputRow - visualRowsShown + 1
 	if drawStartRow < 1 {
 		drawStartRow = 1
 	}
 
-	for i := firstLine; i < rows; i++ {
-		row := drawStartRow + i - firstLine
+	// Stampa con wrapping manuale e indentazione costante
+	currentRow := drawStartRow
+	for i := firstLine; i < len(lines); i++ {
 		prefix := "  "
 		if i == 0 {
 			prefix = "> "
 		}
-		fmt.Printf("\033[%d;1H%s%s", row, prefix, lines[i])
+
+		runes := []rune(lines[i])
+		available := termWidth - 2
+		if available < 1 {
+			available = 1
+		}
+
+		if len(runes) == 0 {
+			fmt.Printf("\033[%d;1H%s", currentRow, prefix)
+			currentRow++
+			continue
+		}
+
+		for len(runes) > 0 {
+			chunkLen := available
+			if len(runes) < chunkLen {
+				chunkLen = len(runes)
+			}
+			fmt.Printf("\033[%d;1H%s%s", currentRow, prefix, string(runes[:chunkLen]))
+			runes = runes[chunkLen:]
+			currentRow++
+			// Per le righe successive dello stesso blocco, mantieni l'indentazione
+			prefix = "  "
+		}
 	}
 
-	cursorRow, cursorCol := r.cursorPosition(lines, firstLine, drawStartRow)
+	cursorRow, cursorCol := r.cursorPosition(lines, firstLine, drawStartRow, termWidth)
 	fmt.Printf("\033[%d;%dH", cursorRow, cursorCol)
-	r.renderedRows = rows
+	r.renderedRows = totalVisualRows
 }
 
-func (r *InputReader) cursorPosition(lines []string, firstLine int, drawStartRow int) (int, int) {
+func (r *InputReader) cursorPosition(lines []string, firstLine int, drawStartRow int, termWidth int) (int, int) {
 	lineIndex := 0
-	col := 0
+	colInLine := 0
 	for i, ch := range r.buffer {
 		if i == r.cursorPos {
 			break
 		}
 		if ch == '\n' {
 			lineIndex++
-			col = 0
+			colInLine = 0
 		} else {
-			col++
+			colInLine++
 		}
 	}
 
@@ -386,17 +448,48 @@ func (r *InputReader) cursorPosition(lines []string, firstLine int, drawStartRow
 		if lineIndex < 0 {
 			lineIndex = 0
 		}
-		col = len([]rune(lines[lineIndex]))
+		colInLine = len([]rune(lines[lineIndex]))
 	}
 
 	if lineIndex < firstLine {
 		lineIndex = firstLine
-		col = 0
+		colInLine = 0
 	}
 
-	row := drawStartRow + lineIndex - firstLine
-	prefixLen := 2
-	return row, prefixLen + col + 1
+	// Calcola la riga visuale sommando le righe delle linee precedenti
+	row := drawStartRow
+	for i := firstLine; i < lineIndex; i++ {
+		textLen := len([]rune(lines[i]))
+		row += r.visualRowsForLine(textLen, termWidth)
+	}
+
+	// Calcola l'offset nella linea corrente
+	if lineIndex >= len(lines) {
+		lineIndex = len(lines) - 1
+		if lineIndex < 0 {
+			lineIndex = 0
+		}
+	}
+	textLen := len([]rune(lines[lineIndex]))
+	if colInLine > textLen {
+		colInLine = textLen
+	}
+
+	available := termWidth - 2
+	if available < 1 {
+		available = 1
+	}
+
+	visualRowInLine := 0
+	if available > 0 {
+		visualRowInLine = colInLine / available
+	}
+	visualCol := colInLine % available
+
+	row += visualRowInLine
+	col := 2 + visualCol + 1 // prefix (2) + col (0-based) + 1 (1-based)
+
+	return row, col
 }
 
 func (r *InputReader) IsVimQuit(input string) bool {
