@@ -64,7 +64,15 @@ func (a *Agent) SetModel(model string) {
 	}
 }
 
+type RunHooks struct {
+	OnLog func(string)
+}
+
 func (a *Agent) Run(ctx context.Context, input string) (string, error) {
+	return a.RunWithHooks(ctx, input, RunHooks{})
+}
+
+func (a *Agent) RunWithHooks(ctx context.Context, input string, hooks RunHooks) (string, error) {
 	if a.provider == nil {
 		return "", fmt.Errorf("not connected to any provider. Use /connect to connect first")
 	}
@@ -74,10 +82,18 @@ func (a *Agent) Run(ctx context.Context, input string) (string, error) {
 	var result strings.Builder
 
 	for {
+		if hooks.OnLog != nil {
+			hooks.OnLog(fmt.Sprintf("querying model %s", a.provider.ModelName()))
+		}
+
 		tools := a.getToolDefinitions()
 		resp, err := a.provider.Chat(ctx, a.session.Messages, tools)
 		if err != nil {
 			return "", fmt.Errorf("chat: %w", err)
+		}
+
+		if hooks.OnLog != nil && resp.Content != "" {
+			hooks.OnLog("received assistant response")
 		}
 
 		if resp.Content != "" {
@@ -89,6 +105,10 @@ func (a *Agent) Run(ctx context.Context, input string) (string, error) {
 			break
 		}
 
+		if hooks.OnLog != nil {
+			hooks.OnLog(fmt.Sprintf("model requested %d tool call(s)", len(resp.ToolCalls)))
+		}
+
 		for _, tc := range resp.ToolCalls {
 			tool, ok := a.tools[tc.Name]
 			if !ok {
@@ -96,9 +116,16 @@ func (a *Agent) Run(ctx context.Context, input string) (string, error) {
 				continue
 			}
 
+			if hooks.OnLog != nil {
+				hooks.OnLog(fmt.Sprintf("running tool: %s", tc.Name))
+			}
+
 			output, err := tool.Execute(ctx, tc.Arguments)
 			if err != nil {
 				output = fmt.Sprintf("error: %v", err)
+			}
+			if hooks.OnLog != nil {
+				hooks.OnLog(fmt.Sprintf("tool completed: %s", tc.Name))
 			}
 
 			result.WriteString(fmt.Sprintf("\n[%s] %s", tc.Name, output))
