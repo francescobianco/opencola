@@ -22,7 +22,7 @@ const author = "by Francesco Bianco <bianco@javanile.org>"
 
 var providers = []string{"opencode", "opencode-go", "opencode-zen"}
 
-var spinnerFrames = []string{" - ", " : ", " = ", "-=-", "=|=", "-=-", " = ", " : ", " - "}
+var spinnerFrames = []string{" - ", " : ", " = ", "-=-", "=|=", "-=-", " = ", " : "}
 
 type TUI struct {
 	ag          *agent.Agent
@@ -209,7 +209,7 @@ func (t *TUI) renderStatusBar() {
 	fmt.Printf("\033[%d;1H", height)
 	fmt.Print("\033[2K")
 
-	fmt.Printf("\033[48;2;30;64;120m\033[38;2;255;255;255m%s\033[0m", bar[:frameLen])
+	fmt.Printf("\033[48;2;30;64;120m\033[38;2;255;200;50m%s\033[0m", bar[:frameLen])
 
 	fmt.Printf("\033[48;2;255;255;255m\033[38;2;30;64;120m%s\033[0m", bar[frameLen:frameLen+logoLen])
 	fmt.Printf("\033[48;2;30;64;120m\033[38;2;255;255;255m%s\033[0m", bar[frameLen+logoLen:])
@@ -319,7 +319,7 @@ func (t *TUI) handleCommand(input string) bool {
 
 func (t *TUI) startSpinner() {
 	go func() {
-		ticker := time.NewTicker(100 * time.Millisecond)
+		ticker := time.NewTicker(50 * time.Millisecond)
 		defer ticker.Stop()
 
 		for {
@@ -354,12 +354,6 @@ func (t *TUI) toggleSpinner() {
 
 	t.spinning = !t.spinning
 	t.spinnerIdx = 0
-
-	if t.spinning {
-		fmt.Println("Spinner started")
-	} else {
-		fmt.Println("Spinner stopped")
-	}
 }
 
 func (t *TUI) printGoodbye() {

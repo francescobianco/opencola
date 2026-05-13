@@ -107,9 +107,9 @@ echo ""
 # ============================================================================
 echo "[2] Spinner Animation"
 send "/spin" Enter
-wait_for 0.4
+wait_for 0.3
 
-# After 400ms (4 ticks) the frame should have changed from " - "
+# After 300ms (6 ticks) the frame should have changed from " - "
 STATUS_LINE_AFTER=$(last_line_clean)
 assert_contains "Spinner activated statusbar still has logo" \
     "OpenCola v0.1.0" "$STATUS_LINE_AFTER"
@@ -127,11 +127,27 @@ case "$STATUS_LINE_AFTER" in
         ;;
 esac
 
-send "/spin" Enter
-wait_for 0.3
+sleep 0.3
 
-VISIBLE=$(full_text)
-assert_contains "Spinner stopped message" "Spinner stopped" "$VISIBLE"
+# After another 300ms, frame should have advanced again
+STATUS_LINE_LATER=$(last_line_clean)
+echo -n "  TEST  Spinner frame keeps advancing ... "
+if [ "$STATUS_LINE_AFTER" != "$STATUS_LINE_LATER" ]; then
+    echo "PASS  (changed: '${STATUS_LINE_AFTER:0:3}' -> '${STATUS_LINE_LATER:0:3}')"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  (same frame: '${STATUS_LINE_AFTER:0:3}')"
+    FAIL=$((FAIL + 1))
+fi
+
+send "/spin" Enter
+wait_for 0.2
+
+# After turning off, frame should be back to " - "
+STATUS_LINE_OFF=$(last_line_clean)
+assert_eq "Status bar after spinner off" \
+    " -  OpenCola v0.1.0  Provider: none  Model: none  Status: Disconnected" \
+    "$STATUS_LINE_OFF"
 
 echo ""
 

@@ -38,16 +38,16 @@ The status bar is always visible on the last terminal row.
 ```
 
 **Colors:**
-- The spinner uses default terminal colors
+- The spinner has **yellow foreground** (`rgb(255,200,50)`) on dark blue background (`rgb(30,64,120)`)
 - The logo (`OpenCola v0.1.0`) has **inverted colors**: white background, dark blue text
 - The rest of the bar: dark blue background (`rgb(30,64,120)`), white text
 
 **Spinner:**
 - 3 characters wide, positioned at the far left of the status bar
-- 9-frame animation sequence: ` - `, ` : `, ` = `, `-=-`, `=|="`, `-=-`, ` = `, ` : `, ` - `
-- 100ms interval between frames
+- 8-frame animation sequence: ` - `, ` : `, ` = `, `-=-`, `=|="`, `-=-`, ` = `, ` : `
+- 50ms interval between frames (full cycle in 400ms)
 - Toggled by the hidden `/spin` command (not documented in `/help`)
-- Resets to frame 0 when activated
+- Resets to frame 0 on each toggle
 
 ## Banner
 
