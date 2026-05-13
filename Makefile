@@ -1,6 +1,6 @@
 .PHONY: run build clean
 
-run: build
+run: clean build
 	./opencola
 
 build:
