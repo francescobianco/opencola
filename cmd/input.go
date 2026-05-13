@@ -19,6 +19,7 @@ var slashCommands = []string{
 	"/help",
 	"/exit",
 	"/quit",
+	"/spin",
 }
 
 type InputReader struct {
@@ -27,7 +28,6 @@ type InputReader struct {
 	buffer        []rune
 	cursorPos     int
 	originalState *term.State
-	Spinning      bool
 }
 
 func NewInputReader() *InputReader {
@@ -248,11 +248,7 @@ func (r *InputReader) autocomplete() {
 
 func (r *InputReader) renderLine() {
 	height := getTerminalHeight()
-	fmt.Printf("\033[%d;1H\033[2K", height-2)
-	if r.Spinning {
-		return
-	}
-	fmt.Print("> ")
+	fmt.Printf("\033[%d;1H\033[2K> ", height-2)
 	fmt.Print(string(r.buffer))
 	if r.cursorPos < len(r.buffer) {
 		fmt.Printf("\033[%dG", 2+r.cursorPos)

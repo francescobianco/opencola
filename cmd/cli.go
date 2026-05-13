@@ -169,13 +169,6 @@ func (t *TUI) renderInitialLayout() {
 
 func (t *TUI) renderPrompt() {
 	height := getTerminalHeight()
-	t.spinnerMu.Lock()
-	spinning := t.spinning
-	t.spinnerMu.Unlock()
-	if spinning {
-		fmt.Printf("\033[%d;1H\033[2K", height-2)
-		return
-	}
 	fmt.Printf("\033[%d;1H\033[2K> ", height-2)
 }
 
@@ -361,7 +354,6 @@ func (t *TUI) toggleSpinner() {
 
 	t.spinning = !t.spinning
 	spinnerBuffer = []byte(spinnerSeed)
-	t.input.Spinning = t.spinning
 }
 
 func (t *TUI) printGoodbye() {

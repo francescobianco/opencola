@@ -48,7 +48,7 @@ The status bar is always visible on the last terminal row.
 - 50ms interval between frames (full cycle in 250ms)
 - Toggled by the hidden `/spin` command (not documented in `/help`)
 - Resets to initial state on each toggle
-- When active, the prompt line is cleared (user input is not displayed) to signal busy state
+- When active, only the status bar animates; the prompt remains visible and fully interactive
 
 ## Banner
 
