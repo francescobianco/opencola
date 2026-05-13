@@ -1,0 +1,189 @@
+package cmd
+
+import (
+	"bufio"
+	"fmt"
+	"os"
+	"strings"
+
+	"golang.org/x/term"
+)
+
+type InputReader struct {
+	history       []string
+	historyIndex  int
+	buffer        []rune
+	cursorPos     int
+	originalState *term.State
+}
+
+func NewInputReader() *InputReader {
+	return &InputReader{
+		history:      make([]string, 0),
+		historyIndex: -1,
+		buffer:       make([]rune, 0),
+		cursorPos:    0,
+	}
+}
+
+func (r *InputReader) LoadHistory(path string) {
+	f, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		r.history = append(r.history, scanner.Text())
+	}
+	r.historyIndex = len(r.history)
+}
+
+func (r *InputReader) SaveHistory(path string) {
+	dir := path[:strings.LastIndex(path, "/")]
+	os.MkdirAll(dir, 0755)
+
+	f, err := os.Create(path)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	maxHistory := 1000
+	start := 0
+	if len(r.history) > maxHistory {
+		start = len(r.history) - maxHistory
+	}
+
+	for _, line := range r.history[start:] {
+		fmt.Fprintln(f, line)
+	}
+}
+
+func (r *InputReader) ReadLine() (string, error) {
+	fd := int(os.Stdin.Fd())
+	state, err := term.MakeRaw(fd)
+	if err != nil {
+		return "", err
+	}
+	r.originalState = state
+	defer term.Restore(fd, state)
+
+	r.buffer = make([]rune, 0)
+	r.cursorPos = 0
+	r.historyIndex = len(r.history)
+
+	r.renderLine()
+
+	reader := bufio.NewReader(os.Stdin)
+
+	for {
+		b, _, err := reader.ReadRune()
+		if err != nil {
+			return string(r.buffer), err
+		}
+
+		switch b {
+		case '\r', '\n':
+			fmt.Println()
+			line := string(r.buffer)
+			if line != "" {
+				r.history = append(r.history, line)
+			}
+			r.historyIndex = len(r.history)
+			return line, nil
+
+		case 127, '\b':
+			if r.cursorPos > 0 {
+				r.buffer = append(r.buffer[:r.cursorPos-1], r.buffer[r.cursorPos:]...)
+				r.cursorPos--
+				r.renderLine()
+			}
+
+		case 0:
+			// Ctrl+Space or special sequences
+			continue
+
+		case 1:
+			// Ctrl+A - home
+			r.cursorPos = 0
+			r.renderLine()
+
+		case 5:
+			// Ctrl+E - end
+			r.cursorPos = len(r.buffer)
+			r.renderLine()
+
+		case 27:
+			// Escape sequence
+			b2, _, _ := reader.ReadRune()
+			if b2 == '[' {
+				b3, _, _ := reader.ReadRune()
+				switch b3 {
+				case 'A':
+					// Up arrow - history previous
+					if r.historyIndex > 0 {
+						r.historyIndex--
+						r.buffer = []rune(r.history[r.historyIndex])
+						r.cursorPos = len(r.buffer)
+						r.renderLine()
+					}
+
+				case 'B':
+					// Down arrow - history next
+					if r.historyIndex < len(r.history)-1 {
+						r.historyIndex++
+						r.buffer = []rune(r.history[r.historyIndex])
+						r.cursorPos = len(r.buffer)
+						r.renderLine()
+					} else {
+						r.historyIndex = len(r.history)
+						r.buffer = make([]rune, 0)
+						r.cursorPos = 0
+						r.renderLine()
+					}
+
+				case 'C':
+					// Right arrow
+					if r.cursorPos < len(r.buffer) {
+						r.cursorPos++
+						r.renderLine()
+					}
+
+				case 'D':
+					// Left arrow
+					if r.cursorPos > 0 {
+						r.cursorPos--
+						r.renderLine()
+					}
+
+				case '3':
+					// Delete
+					reader.ReadRune() // consume '~'
+					if r.cursorPos < len(r.buffer) {
+						r.buffer = append(r.buffer[:r.cursorPos], r.buffer[r.cursorPos+1:]...)
+						r.renderLine()
+					}
+				}
+			}
+
+		default:
+			if b >= 32 {
+				r.buffer = append(r.buffer, 0)
+				copy(r.buffer[r.cursorPos+1:], r.buffer[r.cursorPos:])
+				r.buffer[r.cursorPos] = b
+				r.cursorPos++
+				r.renderLine()
+			}
+		}
+	}
+}
+
+func (r *InputReader) renderLine() {
+	fmt.Print("\033[2K\033[G> ")
+	fmt.Print(string(r.buffer))
+	if r.cursorPos < len(r.buffer) {
+		fmt.Printf("\033[%dG", 2+r.cursorPos)
+	}
+}

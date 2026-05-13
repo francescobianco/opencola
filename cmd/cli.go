@@ -4,21 +4,17 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
-	"strconv"
 	"strings"
 
 	"github.com/opencola/opencola/agent"
 	"github.com/opencola/opencola/config"
 	"github.com/opencola/opencola/provider"
 	"github.com/opencola/opencola/tools"
-	"github.com/peterh/liner"
 )
 
 const version = "0.1.0"
 
-const banner = `
-opencola - coding agent
+const banner = `opencola - coding agent
 Type /help for available commands
 `
 
@@ -42,57 +38,41 @@ func Run() error {
 		ag.SetProvider(prov)
 	}
 
-	line := liner.NewLiner()
-	defer line.Close()
-
-	line.SetCtrlCAborts(true)
-
-	historyPath := config.DefaultHistoryPath()
-	if f, err := os.Open(historyPath); err == nil {
-		line.ReadHistory(f)
-		f.Close()
-	}
-	defer func() {
-		if f, err := os.Create(historyPath); err == nil {
-			line.WriteHistory(f)
-			f.Close()
-		}
-	}()
-
 	fmt.Print(banner)
-	drawStatusBar(ag)
+
+	input := NewInputReader()
+	input.LoadHistory(config.DefaultHistoryPath())
+	defer input.SaveHistory(config.DefaultHistoryPath())
 
 	ctx := context.Background()
 
 	for {
-		input, err := line.Prompt("> ")
+		renderStatusBar(ag)
+		line, err := input.ReadLine()
 		if err != nil {
 			break
 		}
 
-		input = strings.TrimSpace(input)
-		if input == "" {
+		line = strings.TrimSpace(line)
+		if line == "" {
 			continue
 		}
 
-		line.AppendHistory(input)
+		fmt.Println()
 
-		if strings.HasPrefix(input, "/") {
-			handleCommand(input, ag, cfg, cfgPath, ctx)
-			drawStatusBar(ag)
+		if strings.HasPrefix(line, "/") {
+			handleCommand(line, ag, cfg, cfgPath, ctx)
 			continue
 		}
 
-		output, err := ag.Run(ctx, input)
+		output, err := ag.Run(ctx, line)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			drawStatusBar(ag)
 			continue
 		}
 
 		fmt.Println(output)
 		fmt.Println()
-		drawStatusBar(ag)
 	}
 
 	return nil
@@ -163,7 +143,7 @@ func handleCommand(input string, ag *agent.Agent, cfg *config.Config, cfgPath st
 		fmt.Println("Session reset")
 
 	case "/status":
-		drawStatusBar(ag)
+		renderStatusBar(ag)
 
 	case "/exit", "/quit":
 		os.Exit(0)
@@ -173,7 +153,7 @@ func handleCommand(input string, ag *agent.Agent, cfg *config.Config, cfgPath st
 	}
 }
 
-func drawStatusBar(ag *agent.Agent) {
+func renderStatusBar(ag *agent.Agent) {
 	status := "Disconnected"
 	provName := "none"
 	modelName := "none"
@@ -184,34 +164,21 @@ func drawStatusBar(ag *agent.Agent) {
 		modelName = ag.ModelName()
 	}
 
-	clearLine()
-	fmt.Printf("\033[38;5;240m\033[48;5;250m OpenCola v%s \033[0m\033[38;5;240m\033[48;5;250m| Provider: \033[38;5;27m\033[48;5;250m%s \033[0m\033[38;5;240m\033[48;5;250m| Model: \033[38;5;34m\033[48;5;250m%s \033[0m\033[38;5;240m\033[48;5;250m| Status: \033[48;5;250m%s \033[0m",
+	width := getTerminalWidth()
+
+	bar := fmt.Sprintf(" OpenCola v%s  |  Provider: %s  |  Model: %s  |  Status: %s ",
 		version, provName, modelName, status)
 
-	if status == "Connected" {
-		fmt.Printf("\033[38;5;22m\033[48;5;250m %s\033[0m", status)
-	} else {
-		fmt.Printf("\033[38;5;160m\033[48;5;250m %s\033[0m", status)
+	if len(bar) > width {
+		bar = bar[:width]
 	}
 
-	fmt.Println()
-}
+	padding := strings.Repeat(" ", width-len(bar))
+	bar += padding
 
-func clearLine() {
-	fmt.Print("\033[2K\033[G")
-}
-
-func getTerminalHeight() int {
-	cmd := exec.Command("stty", "size")
-	cmd.Stdin = os.Stdin
-	out, err := cmd.Output()
-	if err != nil {
-		return 24
-	}
-	parts := strings.Fields(string(out))
-	if len(parts) < 2 {
-		return 24
-	}
-	h, _ := strconv.Atoi(parts[0])
-	return h
+	fmt.Printf("\033[s")
+	fmt.Printf("\033[%d;1H", getTerminalHeight())
+	fmt.Printf("\033[48;2;30;64;120m\033[38;2;255;255;255m%s\033[0m", bar)
+	fmt.Printf("\033[u")
+	fmt.Printf("\033[1A")
 }
