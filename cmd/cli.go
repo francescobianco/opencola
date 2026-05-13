@@ -83,7 +83,7 @@ func Run() error {
 		envPath:     envPath,
 		ctx:         context.Background(),
 		input:       NewInputReader(),
-		spinning:    true,
+		spinning:    false,
 		spinnerDone: make(chan struct{}),
 	}
 
@@ -111,8 +111,6 @@ func Run() error {
 			tui.printGoodbye()
 			break
 		}
-
-		fmt.Println()
 
 		if strings.HasPrefix(line, "/") {
 			if tui.handleCommand(line) {
@@ -150,8 +148,9 @@ func (t *TUI) renderInitialLayout() {
 	height := getTerminalHeight()
 
 	fmt.Print("\033[2J\033[H")
+	t.reserveStatusLine()
 
-	freeLines := height - 7
+	freeLines := height - 6
 	if freeLines < 0 {
 		freeLines = 0
 	}
@@ -165,7 +164,7 @@ func (t *TUI) renderInitialLayout() {
 	fmt.Println("Type /help for a list of commands.")
 	fmt.Println()
 
-	fmt.Printf("\033[%d;1H", height-2)
+	fmt.Printf("\033[%d;1H", t.contentBottomRow())
 	fmt.Print("\033[2K")
 	fmt.Print("> ")
 
@@ -173,8 +172,23 @@ func (t *TUI) renderInitialLayout() {
 }
 
 func (t *TUI) renderPrompt() {
+	t.reserveStatusLine()
+	fmt.Printf("\033[%d;1H\033[2K> ", t.contentBottomRow())
+}
+
+func (t *TUI) contentBottomRow() int {
 	height := getTerminalHeight()
-	fmt.Printf("\033[%d;1H\033[2K> ", height-2)
+	if height < 2 {
+		return 1
+	}
+	return height - 1
+}
+
+func (t *TUI) reserveStatusLine() {
+	height := getTerminalHeight()
+	if height > 1 {
+		fmt.Printf("\033[1;%dr", height-1)
+	}
 }
 
 func (t *TUI) renderStatusBar() {
@@ -209,6 +223,7 @@ func (t *TUI) renderStatusBar() {
 	frameLen := len(frame)
 	logoLen := len(logo)
 
+	fmt.Print("\0337")
 	fmt.Printf("\033[%d;1H", height)
 	fmt.Print("\033[2K")
 
@@ -216,13 +231,14 @@ func (t *TUI) renderStatusBar() {
 
 	fmt.Printf("\033[48;2;255;255;255m\033[38;2;30;64;120m%s\033[0m", bar[frameLen:frameLen+logoLen])
 	fmt.Printf("\033[48;2;30;64;120m\033[38;2;255;255;255m%s\033[0m", bar[frameLen+logoLen:])
+	fmt.Print("\0338")
 }
 
 func (t *TUI) renderEventLog(message string) {
 	ts := time.Now().Format("15:04:05")
-	height := getTerminalHeight()
-	fmt.Printf("\033[%d;1H\033[2K", height-2)
-	fmt.Printf("[%s] %s\n", ts, message)
+	fmt.Printf("\033[%d;1H\033[2K", t.contentBottomRow())
+	fmt.Printf("[%s] %s\r\n", ts, message)
+	t.renderStatusBar()
 }
 
 func (t *TUI) handleCommand(input string) bool {
@@ -370,6 +386,7 @@ func (t *TUI) toggleSpinner() {
 
 func (t *TUI) printGoodbye() {
 	t.stopSpinner()
+	fmt.Print("\033[r")
 	fmt.Print("\033[2J\033[H")
 	fmt.Println()
 	fmt.Println("Goodbye! Thanks for using OpenCola. See you next time!")

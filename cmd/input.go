@@ -115,6 +115,7 @@ func (r *InputReader) ReadLine() (string, error) {
 				r.history = append(r.history, line)
 			}
 			r.historyIndex = len(r.history)
+			fmt.Print("\r\n")
 			return line, nil
 
 		case 3:
@@ -248,7 +249,12 @@ func (r *InputReader) autocomplete() {
 
 func (r *InputReader) renderLine() {
 	height := getTerminalHeight()
-	fmt.Printf("\033[%d;1H\033[2K> ", height-2)
+	inputRow := height - 1
+	if inputRow < 1 {
+		inputRow = 1
+	}
+
+	fmt.Printf("\033[%d;1H\033[2K> ", inputRow)
 	fmt.Print(string(r.buffer))
 	if r.cursorPos < len(r.buffer) {
 		fmt.Printf("\033[%dG", 2+r.cursorPos)
