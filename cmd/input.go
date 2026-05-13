@@ -102,6 +102,10 @@ func (r *InputReader) ReadLine() (string, error) {
 	r.originalState = state
 	defer term.Restore(fd, state)
 
+	// Enable kitty keyboard protocol for shift+enter detection
+	fmt.Print("\x1b[>1u")
+	defer fmt.Print("\x1b[<1u")
+
 	r.buffer = make([]rune, 0)
 	r.cursorPos = 0
 	r.historyIndex = len(r.history)
@@ -117,7 +121,7 @@ func (r *InputReader) ReadLine() (string, error) {
 		}
 
 		switch b {
-		case '\r', '\n':
+		case '\r':
 			line := string(r.buffer)
 			if line != "" {
 				r.history = append(r.history, line)
@@ -125,6 +129,9 @@ func (r *InputReader) ReadLine() (string, error) {
 			r.historyIndex = len(r.history)
 			fmt.Print("\r\n")
 			return line, nil
+
+		case '\n':
+			r.insertRune('\n')
 
 		case 3:
 			return "", fmt.Errorf("interrupt")
@@ -205,6 +212,22 @@ func (r *InputReader) ReadLine() (string, error) {
 						}
 					}
 					if string(seq) == "13;2u" || string(seq) == "13;2~" {
+						r.insertRune('\n')
+					}
+
+				case '2':
+					seq := []rune{b3}
+					for {
+						next, _, err := reader.ReadRune()
+						if err != nil {
+							break
+						}
+						seq = append(seq, next)
+						if (next >= '@' && next <= '~') || len(seq) > 12 {
+							break
+						}
+					}
+					if string(seq) == "7;2;13~" {
 						r.insertRune('\n')
 					}
 				}

@@ -183,7 +183,7 @@ func (t *TUI) renderInitialLayout(showBanner bool) {
 	t.reserveStatusLine()
 
 	if showBanner {
-		freeLines := height - 7
+		freeLines := height - 8
 		if freeLines < 0 {
 			freeLines = 0
 		}
@@ -192,9 +192,9 @@ func (t *TUI) renderInitialLayout(showBanner bool) {
 			fmt.Println()
 		}
 
-		fmt.Printf("\033[1;97mOpenCola\033[0m - minimal coding agent\n")
+		fmt.Printf("\033[1;97mOpenCola\033[0m small coding agent\n")
 		fmt.Println(author)
-		fmt.Println("Type /help for a list of commands.")
+		fmt.Println("type /help for a list of commands")
 		fmt.Println()
 	}
 
@@ -315,13 +315,12 @@ func (t *TUI) handleCommand(input string) bool {
 	switch cmd {
 	case "/help":
 		fmt.Println("Available commands:")
-		fmt.Println("  /connect <provider>                     - Connect to a provider")
-		fmt.Println("  /models                                 - Select a model")
-		fmt.Println("  /reset                                  - Reset conversation")
-		fmt.Println("  /clear                                  - Clear the screen")
-		fmt.Println("  /status                                 - Show current status")
-		fmt.Println("  /exit, /quit, :q                        - Exit the program")
-		fmt.Println("  /help                                   - Show this help")
+		fmt.Println("  /connect <provider>        Connect to a provider")
+		fmt.Println("  /models                    Select a model")
+		fmt.Println("  /reset                     Reset conversation")
+		fmt.Println("  /clear                     Clear the screen")
+		fmt.Println("  /status                    Show current status")
+		fmt.Println("  /exit, /quit, :q           Exit the program")
 
 	case "/connect":
 		if len(parts) < 2 {
