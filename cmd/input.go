@@ -246,7 +246,8 @@ func (r *InputReader) autocomplete() {
 }
 
 func (r *InputReader) renderLine() {
-	fmt.Print("\033[2K\033[G> ")
+	height := getTerminalHeight()
+	fmt.Printf("\033[%d;1H\033[2K> ", height-2)
 	fmt.Print(string(r.buffer))
 	if r.cursorPos < len(r.buffer) {
 		fmt.Printf("\033[%dG", 2+r.cursorPos)
