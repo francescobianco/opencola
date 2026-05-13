@@ -23,6 +23,7 @@ const author = "by Francesco Bianco <bianco@javanile.org>"
 var providers = []string{"opencode", "opencode-go", "opencode-zen"}
 
 const spinnerSeed = "...|...||....|.|...||......"
+
 var spinnerBuffer = []byte(spinnerSeed)
 
 type TUI struct {
@@ -82,6 +83,7 @@ func Run() error {
 		envPath:     envPath,
 		ctx:         context.Background(),
 		input:       NewInputReader(),
+		spinning:    true,
 		spinnerDone: make(chan struct{}),
 	}
 
@@ -126,13 +128,16 @@ func Run() error {
 			continue
 		}
 
-		output, err := tui.ag.Run(tui.ctx, line)
+		output, err := tui.ag.RunWithHooks(tui.ctx, line, agent.RunHooks{
+			OnLog: tui.renderEventLog,
+		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			tui.renderStatusBar()
 			continue
 		}
 
+		tui.renderEventLog("assistant response ready")
 		fmt.Println(output)
 		fmt.Println()
 		tui.renderStatusBar()
@@ -211,6 +216,13 @@ func (t *TUI) renderStatusBar() {
 
 	fmt.Printf("\033[48;2;255;255;255m\033[38;2;30;64;120m%s\033[0m", bar[frameLen:frameLen+logoLen])
 	fmt.Printf("\033[48;2;30;64;120m\033[38;2;255;255;255m%s\033[0m", bar[frameLen+logoLen:])
+}
+
+func (t *TUI) renderEventLog(message string) {
+	ts := time.Now().Format("15:04:05")
+	height := getTerminalHeight()
+	fmt.Printf("\033[%d;1H\033[2K", height-2)
+	fmt.Printf("[%s] %s\n", ts, message)
 }
 
 func (t *TUI) handleCommand(input string) bool {
