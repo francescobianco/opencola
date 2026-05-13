@@ -13,7 +13,8 @@ This document describes the core design principles and features of OpenCola. Eac
   ```
   OpenCola - minimal coding agent
   by Francesco Bianco <bianco@javanile.org>
-
+  Type /help for a list of commands.
+  
   >
   ```
 - One blank line below the prompt before user input
