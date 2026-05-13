@@ -8,3 +8,8 @@ build:
 
 clean:
 	rm -f opencola
+
+push:
+	git add .
+	git commit -m "Update" || true
+	git push
