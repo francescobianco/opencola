@@ -64,6 +64,8 @@ type TUI struct {
 	envPath     string
 	ctx         context.Context
 	input       *InputReader
+	models      []provider.ModelInfo
+	modelsKey   string
 	spinning    bool
 	spinnerMu   sync.Mutex
 	spinnerDone chan struct{}
@@ -127,6 +129,7 @@ func Run() error {
 
 	for {
 		tui.renderPrompt()
+		tui.refreshInputModelOptions()
 		line, err := tui.input.ReadLine()
 		if err != nil {
 			tui.printGoodbye()
@@ -330,7 +333,8 @@ func (t *TUI) handleCommand(input string) bool {
 	case "/help":
 		fmt.Println("Available commands:")
 		fmt.Println("  /connect <provider>        Connect to a provider")
-		fmt.Println("  /models                    Select a model")
+		fmt.Println("  /model <slug>              Select a model")
+		fmt.Println("  /models                    Open model selector")
 		fmt.Println("  /reset                     Reset conversation")
 		fmt.Println("  /clear                     Clear the screen")
 		fmt.Println("  /status                    Show current status")
@@ -368,6 +372,8 @@ func (t *TUI) handleCommand(input string) bool {
 		prov := newProvider(profile.Slug, apiKey, profile.DefaultModel, baseURL)
 
 		t.ag.SetProvider(prov)
+		t.models = nil
+		t.modelsKey = ""
 		t.cfg.AddProvider(config.ProviderConfig{
 			Name:     prov.Name(),
 			Provider: profile.Slug,
@@ -383,9 +389,17 @@ func (t *TUI) handleCommand(input string) bool {
 
 		fmt.Printf("Connected to %s\n", profile.Label)
 
-	case "/models":
+	case "/model", "/models":
 		if !t.ag.IsConnected() {
 			fmt.Println("Not connected to any provider. Use /connect first.")
+			return false
+		}
+
+		if len(parts) >= 2 {
+			selected := parts[1]
+			if label, ok := t.selectModel(selected); ok {
+				fmt.Printf("Selected model: %s (%s)\n", label, selected)
+			}
 			return false
 		}
 
@@ -397,8 +411,9 @@ func (t *TUI) handleCommand(input string) bool {
 
 		selected := showModelMenu(models)
 		if selected != "" {
-			t.ag.SetModel(selected)
-			fmt.Printf("Selected model: %s\n", selected)
+			if label, ok := t.selectModel(selected); ok {
+				fmt.Printf("Selected model: %s (%s)\n", label, selected)
+			}
 		}
 
 	case "/reset":
@@ -422,6 +437,60 @@ func (t *TUI) handleCommand(input string) bool {
 	}
 
 	return false
+}
+
+func (t *TUI) refreshInputModelOptions() {
+	if !t.ag.IsConnected() {
+		t.models = nil
+		t.modelsKey = ""
+		t.input.SetModelOptions(nil, "")
+		return
+	}
+
+	key := t.ag.ProviderName()
+	if key != t.modelsKey || len(t.models) == 0 {
+		if profile, ok := findProviderProfileByLabel(key); ok {
+			t.models = profile.Models
+			t.modelsKey = key
+		} else {
+			models, err := t.ag.ListModels(t.ctx)
+			if err == nil {
+				t.models = models
+				t.modelsKey = key
+			}
+		}
+	}
+
+	t.input.SetModelOptions(t.models, t.ag.ModelName())
+}
+
+func (t *TUI) selectModel(slug string) (string, bool) {
+	slug = strings.TrimSpace(slug)
+	if slug == "" {
+		return "", false
+	}
+
+	label := slug
+	for _, model := range t.models {
+		if model.ID == slug {
+			if model.Name != "" {
+				label = model.Name
+			}
+			break
+		}
+	}
+
+	t.ag.SetModel(slug)
+	if active := t.cfg.ActiveProvider(); active != nil {
+		active.Model = slug
+		_ = t.cfg.Save(t.cfgPath)
+	}
+	t.envCfg.Model = slug
+	_ = t.envCfg.Save(t.envPath)
+	t.input.SetModelOptions(t.models, slug)
+	t.renderStatusBar()
+
+	return label, true
 }
 
 func readAPIKey(providerName string) (string, error) {
@@ -641,6 +710,15 @@ func normalizeProviderBaseURL(slug string, baseURL string) string {
 func findProviderProfile(slug string) (providerProfile, bool) {
 	for _, profile := range providerProfiles {
 		if profile.Slug == slug {
+			return profile, true
+		}
+	}
+	return providerProfile{}, false
+}
+
+func findProviderProfileByLabel(label string) (providerProfile, bool) {
+	for _, profile := range providerProfiles {
+		if profile.Label == label {
 			return profile, true
 		}
 	}

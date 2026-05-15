@@ -7,11 +7,13 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/francescobianco/opencola/provider"
 	"golang.org/x/term"
 )
 
 var slashCommands = []string{
 	"/connect",
+	"/model",
 	"/models",
 	"/reset",
 	"/clear",
@@ -29,28 +31,41 @@ var plainCommands = []string{
 }
 
 type InputReader struct {
-	history       []string
-	historyIndex  int
-	buffer        []rune
-	cursorPos     int
-	promptRow     int
-	renderedRows  int
-	originalState *term.State
+	history           []string
+	historyIndex      int
+	buffer            []rune
+	cursorPos         int
+	promptRow         int
+	renderedRows      int
+	renderedModelRows int
+	originalState     *term.State
+	modelOptions      []provider.ModelInfo
+	currentModel      string
+	modelMenuActive   bool
+	modelMenuSelected int
+	modelMenuOffset   int
+	modelMenuMaxRows  int
 }
 
 func NewInputReader() *InputReader {
 	return &InputReader{
-		history:      make([]string, 0),
-		historyIndex: -1,
-		buffer:       make([]rune, 0),
-		cursorPos:    0,
-		promptRow:    0,
-		renderedRows: 1,
+		history:          make([]string, 0),
+		historyIndex:     -1,
+		buffer:           make([]rune, 0),
+		cursorPos:        0,
+		promptRow:        0,
+		renderedRows:     1,
+		modelMenuMaxRows: 6,
 	}
 }
 
 func (r *InputReader) SetPromptRow(row int) {
 	r.promptRow = row
+}
+
+func (r *InputReader) SetModelOptions(models []provider.ModelInfo, current string) {
+	r.modelOptions = append(r.modelOptions[:0], models...)
+	r.currentModel = current
 }
 
 func (r *InputReader) LoadHistory(path string) {
@@ -115,6 +130,8 @@ func (r *InputReader) ReadLine() (string, error) {
 	r.buffer = make([]rune, 0)
 	r.cursorPos = 0
 	r.historyIndex = len(r.history)
+	r.modelMenuActive = false
+	r.modelMenuOffset = 0
 
 	r.renderLine()
 
@@ -128,6 +145,9 @@ func (r *InputReader) ReadLine() (string, error) {
 
 		switch b {
 		case '\r':
+			if r.modelMenuActive {
+				r.acceptModelSelection()
+			}
 			line := string(r.buffer)
 			if line != "" {
 				r.history = append(r.history, line)
@@ -146,15 +166,18 @@ func (r *InputReader) ReadLine() (string, error) {
 			if r.cursorPos > 0 {
 				r.buffer = append(r.buffer[:r.cursorPos-1], r.buffer[r.cursorPos:]...)
 				r.cursorPos--
+				r.updateModelMenuState()
 				r.renderLine()
 			}
 
 		case 1:
 			r.cursorPos = 0
+			r.updateModelMenuState()
 			r.renderLine()
 
 		case 5:
 			r.cursorPos = len(r.buffer)
+			r.updateModelMenuState()
 			r.renderLine()
 
 		case '\t':
@@ -166,35 +189,48 @@ func (r *InputReader) ReadLine() (string, error) {
 				b3, _, _ := reader.ReadRune()
 				switch b3 {
 				case 'A':
+					if r.modelMenuActive {
+						r.moveModelSelection(-1)
+						break
+					}
 					if r.historyIndex > 0 {
 						r.historyIndex--
 						r.buffer = []rune(r.history[r.historyIndex])
 						r.cursorPos = len(r.buffer)
+						r.updateModelMenuState()
 						r.renderLine()
 					}
 
 				case 'B':
+					if r.modelMenuActive {
+						r.moveModelSelection(1)
+						break
+					}
 					if r.historyIndex < len(r.history)-1 {
 						r.historyIndex++
 						r.buffer = []rune(r.history[r.historyIndex])
 						r.cursorPos = len(r.buffer)
+						r.updateModelMenuState()
 						r.renderLine()
 					} else {
 						r.historyIndex = len(r.history)
 						r.buffer = make([]rune, 0)
 						r.cursorPos = 0
+						r.updateModelMenuState()
 						r.renderLine()
 					}
 
 				case 'C':
 					if r.cursorPos < len(r.buffer) {
 						r.cursorPos++
+						r.updateModelMenuState()
 						r.renderLine()
 					}
 
 				case 'D':
 					if r.cursorPos > 0 {
 						r.cursorPos--
+						r.updateModelMenuState()
 						r.renderLine()
 					}
 
@@ -202,6 +238,7 @@ func (r *InputReader) ReadLine() (string, error) {
 					reader.ReadRune()
 					if r.cursorPos < len(r.buffer) {
 						r.buffer = append(r.buffer[:r.cursorPos], r.buffer[r.cursorPos+1:]...)
+						r.updateModelMenuState()
 						r.renderLine()
 					}
 
@@ -252,7 +289,126 @@ func (r *InputReader) insertRune(ch rune) {
 	copy(r.buffer[r.cursorPos+1:], r.buffer[r.cursorPos:])
 	r.buffer[r.cursorPos] = ch
 	r.cursorPos++
+	r.updateModelMenuState()
 	r.renderLine()
+}
+
+func (r *InputReader) setBuffer(value string) {
+	r.buffer = []rune(value)
+	r.cursorPos = len(r.buffer)
+	r.updateModelMenuState()
+	r.renderLine()
+}
+
+func (r *InputReader) updateModelMenuState() {
+	input := string(r.buffer)
+	fields := strings.Fields(input)
+	isModelCommand := input == "/model" || input == "/models" ||
+		strings.HasPrefix(input, "/model ") || strings.HasPrefix(input, "/models ")
+
+	if !isModelCommand || len(r.modelOptions) == 0 {
+		r.modelMenuActive = false
+		r.modelMenuOffset = 0
+		return
+	}
+
+	selectedSlug := ""
+	if len(fields) >= 2 {
+		selectedSlug = fields[1]
+	} else if r.currentModel != "" && r.currentModel != "none" {
+		selectedSlug = r.currentModel
+	}
+
+	selected := r.findModelIndex(selectedSlug)
+	if selected < 0 {
+		selected = 0
+	}
+	r.modelMenuActive = true
+	r.modelMenuSelected = selected
+	r.ensureModelSelectionVisible()
+
+	if len(fields) < 2 && selectedSlug != "" && input != "/model" {
+		cmd := fields[0]
+		if cmd == "" {
+			cmd = "/model"
+		}
+		r.buffer = []rune(cmd + " " + selectedSlug)
+		r.cursorPos = len(r.buffer)
+	}
+}
+
+func (r *InputReader) findModelIndex(slug string) int {
+	if slug == "" {
+		return -1
+	}
+	for i, model := range r.modelOptions {
+		if model.ID == slug {
+			return i
+		}
+	}
+	return -1
+}
+
+func (r *InputReader) ensureModelSelectionVisible() {
+	maxRows := r.modelMenuVisibleRows()
+	if r.modelMenuSelected < r.modelMenuOffset {
+		r.modelMenuOffset = r.modelMenuSelected
+	}
+	if r.modelMenuSelected >= r.modelMenuOffset+maxRows {
+		r.modelMenuOffset = r.modelMenuSelected - maxRows + 1
+	}
+	if r.modelMenuOffset < 0 {
+		r.modelMenuOffset = 0
+	}
+}
+
+func (r *InputReader) modelMenuVisibleRows() int {
+	rows := r.modelMenuMaxRows
+	if rows <= 0 {
+		rows = 6
+	}
+	if len(r.modelOptions) < rows {
+		rows = len(r.modelOptions)
+	}
+	return rows
+}
+
+func (r *InputReader) moveModelSelection(delta int) {
+	if len(r.modelOptions) == 0 {
+		return
+	}
+	r.modelMenuSelected += delta
+	if r.modelMenuSelected < 0 {
+		r.modelMenuSelected = 0
+	}
+	if r.modelMenuSelected >= len(r.modelOptions) {
+		r.modelMenuSelected = len(r.modelOptions) - 1
+	}
+	r.ensureModelSelectionVisible()
+	r.fillSelectedModel()
+	r.renderLine()
+}
+
+func (r *InputReader) acceptModelSelection() {
+	if len(r.modelOptions) == 0 {
+		return
+	}
+	r.fillSelectedModel()
+	r.modelMenuActive = false
+}
+
+func (r *InputReader) fillSelectedModel() {
+	if r.modelMenuSelected < 0 || r.modelMenuSelected >= len(r.modelOptions) {
+		return
+	}
+	cmd := "/model"
+	fields := strings.Fields(string(r.buffer))
+	if len(fields) > 0 && fields[0] == "/models" {
+		cmd = "/models"
+	}
+	value := cmd + " " + r.modelOptions[r.modelMenuSelected].ID
+	r.buffer = []rune(value)
+	r.cursorPos = len(r.buffer)
 }
 
 func (r *InputReader) autocomplete() {
@@ -260,9 +416,7 @@ func (r *InputReader) autocomplete() {
 	if !strings.HasPrefix(input, "/") {
 		for _, cmd := range plainCommands {
 			if strings.HasPrefix(cmd, strings.ToLower(input)) {
-				r.buffer = []rune(cmd + " ")
-				r.cursorPos = len(r.buffer)
-				r.renderLine()
+				r.setBuffer(cmd + " ")
 				return
 			}
 		}
@@ -279,9 +433,7 @@ func (r *InputReader) autocomplete() {
 		}
 
 		if len(matches) == 1 {
-			r.buffer = []rune(matches[0] + " ")
-			r.cursorPos = len(r.buffer)
-			r.renderLine()
+			r.setBuffer(matches[0] + " ")
 		} else if len(matches) > 1 {
 			fmt.Println()
 			for _, m := range matches {
@@ -299,10 +451,13 @@ func (r *InputReader) autocomplete() {
 		}
 	}
 
+	if input == "/mode" {
+		r.setBuffer("/model ")
+		return
+	}
+
 	if len(matches) == 1 {
-		r.buffer = []rune(matches[0] + " ")
-		r.cursorPos = len(r.buffer)
-		r.renderLine()
+		r.setBuffer(matches[0] + " ")
 	} else if len(matches) > 1 {
 		fmt.Println()
 		for _, m := range matches {
@@ -356,7 +511,15 @@ func (r *InputReader) renderLine() {
 	if totalVisualRows > clearRows {
 		clearRows = totalVisualRows
 	}
-	startRow := inputRow - clearRows + 1
+	menuRows := 0
+	if r.modelMenuActive {
+		menuRows = r.modelMenuVisibleRows()
+	}
+	clearMenuRows := r.renderedModelRows
+	if menuRows > clearMenuRows {
+		clearMenuRows = menuRows
+	}
+	startRow := inputRow - clearRows - clearMenuRows + 1
 	if startRow < 1 {
 		startRow = 1
 	}
@@ -389,6 +552,8 @@ func (r *InputReader) renderLine() {
 	if drawStartRow < 1 {
 		drawStartRow = 1
 	}
+
+	r.renderModelMenu(drawStartRow, termWidth)
 
 	// Stampa con wrapping manuale e indentazione costante
 	currentRow := drawStartRow
@@ -426,6 +591,48 @@ func (r *InputReader) renderLine() {
 	cursorRow, cursorCol := r.cursorPosition(lines, firstLine, drawStartRow, termWidth)
 	fmt.Printf("\033[%d;%dH", cursorRow, cursorCol)
 	r.renderedRows = totalVisualRows
+	r.renderedModelRows = menuRows
+}
+
+func (r *InputReader) renderModelMenu(inputStartRow int, termWidth int) {
+	if !r.modelMenuActive || len(r.modelOptions) == 0 {
+		return
+	}
+
+	rows := r.modelMenuVisibleRows()
+	startRow := inputStartRow - rows
+	if startRow < 1 {
+		startRow = 1
+	}
+
+	for i := 0; i < rows; i++ {
+		idx := r.modelMenuOffset + i
+		if idx >= len(r.modelOptions) {
+			break
+		}
+		model := r.modelOptions[idx]
+		label := model.Name
+		if label == "" {
+			label = model.ID
+		}
+
+		cursor := "  "
+		if idx == r.modelMenuSelected {
+			cursor = "> "
+		}
+
+		line := fmt.Sprintf("%s%s", cursor, label)
+		if label != model.ID {
+			line = fmt.Sprintf("%s%s (%s)", cursor, label, model.ID)
+		}
+		if model.ID == r.currentModel {
+			line += " *"
+		}
+		if len([]rune(line)) > termWidth {
+			line = string([]rune(line)[:termWidth])
+		}
+		fmt.Printf("\033[%d;1H\033[2K%s", startRow+i, line)
+	}
 }
 
 func (r *InputReader) cursorPosition(lines []string, firstLine int, drawStartRow int, termWidth int) (int, int) {

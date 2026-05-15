@@ -37,7 +37,8 @@ What is the capital of France?
 | Command | Description |
 |---|---|
 | `/connect <provider>` | Connect to an LLM provider |
-| `/models` | Select a model from the connected provider |
+| `/model <slug>` | Select a model by slug |
+| `/models` | Open the model selector |
 | `/reset` | Clear conversation history |
 | `/clear` | Clear the screen |
 | `/status` | Redraw the status bar |
